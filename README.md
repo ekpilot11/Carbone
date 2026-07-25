@@ -52,28 +52,51 @@ doubt.
 
 ## Setup
 
-### Frontend
-
-```bash
-cd frontend
-npm install
-cp .env.example .env.local   # point VITE_API_BASE_URL at your backend
-npm run dev
-```
-
-Open the printed URL on your phone (same network as your dev machine) to
-use the camera.
-
 ### Backend
 
 ```bash
 cd backend
 npm install   # also downloads a Chromium build for Playwright
-npm run dev
+npm run dev   # listens on :4000
 ```
 
 See [`backend/README.md`](backend/README.md) for selector verification and
 deployment notes.
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev   # listens on :5173, proxies /api to the backend on :4000
+```
+
+`Upload photo` and the live camera both work at `http://localhost:5173` on
+the machine you're running this on, no extra setup needed.
+
+## Using it on your phone (temporary link)
+
+Browsers only allow camera access over HTTPS (or on `localhost` itself), so
+reaching the dev server from your phone over plain LAN HTTP (`http://192.168.x.x:5173`)
+won't let it use the camera. The fix is a single HTTPS tunnel to the
+frontend's port — the frontend's dev server proxies `/api` calls to the
+backend internally, so you only need to tunnel one port, not two.
+
+With both `npm run dev` commands above running, in a third terminal:
+
+```bash
+npx ngrok http 5173
+```
+
+(No ngrok account needed for a quick anonymous session; sign up at
+ngrok.com and run `ngrok config add-authtoken <token>` first if prompted.
+Any HTTPS tunnel tool — Cloudflare Tunnel, etc. — works the same way.)
+
+Open the `https://....ngrok-free.app` URL it prints on your phone. The link
+stops working once you kill the `ngrok` process or the `npm run dev`
+servers — it's meant for trying the app out, not for daily clinical use.
+For that, deploy the frontend and backend properly (e.g. Vercel + Render)
+so you get a stable HTTPS URL — ask if you'd like help setting that up.
 
 ## Testing
 

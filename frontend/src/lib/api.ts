@@ -12,7 +12,11 @@ export interface CalculateResponse {
   warning?: string;
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
+// Defaults to a same-origin relative path so Vite's dev proxy (see
+// vite.config.ts) or a same-origin production deployment can route it;
+// set VITE_API_BASE_URL to override when frontend and backend are hosted
+// on different origins.
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
 export async function calculateBarrett(payload: CalculateRequest): Promise<CalculateResponse> {
   const res = await fetch(`${API_BASE}/api/calculate`, {
