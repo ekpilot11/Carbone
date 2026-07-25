@@ -1,0 +1,202 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f4f6f8;
+  color: #1a1f27;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.app {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 1rem 1rem 3rem;
+}
+
+header h1 {
+  font-size: 1.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.disclaimer {
+  background: #fff7e0;
+  border: 1px solid #e8c766;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.scans {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.capture-card {
+  background: white;
+  border: 1px solid #dde2e8;
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.capture-card h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+
+.hint {
+  color: #5b6470;
+  font-size: 0.85rem;
+  margin: 0.25rem 0 0.75rem;
+}
+
+.preview {
+  width: 100%;
+  border-radius: 8px;
+  background: #000;
+  max-height: 260px;
+  object-fit: contain;
+  margin-bottom: 0.75rem;
+}
+
+.capture-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+button,
+.upload-btn {
+  cursor: pointer;
+  border: none;
+  border-radius: 6px;
+  padding: 0.55rem 1rem;
+  font-size: 0.9rem;
+  background: #2563eb;
+  color: white;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.secondary,
+.link-btn {
+  background: #e5e9f0;
+  color: #1a1f27;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.upload-btn {
+  position: relative;
+  background: #e5e9f0;
+  color: #1a1f27;
+}
+
+.upload-btn input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.error {
+  color: #b3261e;
+  font-size: 0.85rem;
+}
+
+.scan-message {
+  background: #fdecea;
+  border: 1px solid #f3b3ad;
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.9rem;
+}
+
+.review h2 {
+  font-size: 1.15rem;
+  margin-bottom: 0.25rem;
+}
+
+.ocr-badge {
+  display: inline-block;
+  background: #ffe9a8;
+  color: #6b4c00;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.05rem 0.4rem;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+.eye-forms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.eye-form {
+  background: white;
+  border: 1px solid #dde2e8;
+  border-radius: 10px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.eye-form legend {
+  font-weight: 600;
+  padding: 0 0.3rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85rem;
+  gap: 0.25rem;
+}
+
+.field input {
+  padding: 0.5rem;
+  border: 1px solid #ccd3db;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 1.5rem 0;
+}
+
+.error-box {
+  background: #fdecea;
+  border: 1px solid #f3b3ad;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.results {
+  background: white;
+  border: 1px solid #dde2e8;
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.result-card pre {
+  background: #f4f6f8;
+  padding: 0.75rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
