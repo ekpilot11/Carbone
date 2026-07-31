@@ -1,16 +1,21 @@
 export type EyeSide = "OD" | "OS";
 
+/**
+ * The printout's two K readings carry no K1/K2 identification, so the
+ * calculator's convention is applied: K1 is always the lower of the two
+ * values, K2 the higher, regardless of print order.
+ */
 export interface KeratometryReading {
   side: EyeSide;
-  /** Steeper corneal power, in diopters. */
-  steepK: number;
-  /** Flatter corneal power, in diopters. */
-  flatK: number;
-  /** Corneal radius corresponding to steepK, in mm. */
-  steepRadius: number;
-  /** Corneal radius corresponding to flatK, in mm. */
-  flatRadius: number;
-  /** Corneal astigmatism (steepK - flatK), in diopters, as printed by the device. */
+  /** Measured K1 — always the lower corneal power, in diopters. */
+  k1: number;
+  /** Measured K2 — always the higher corneal power, in diopters. */
+  k2: number;
+  /** Corneal radius corresponding to K1, in mm. */
+  r1: number;
+  /** Corneal radius corresponding to K2, in mm. */
+  r2: number;
+  /** Corneal astigmatism (K2 - K1), in diopters, as printed by the device. */
   cylinder: number;
 }
 
@@ -41,7 +46,7 @@ export interface FixedIolInput {
 
 export interface EyeInput {
   side: EyeSide;
-  keratometry: Pick<KeratometryReading, "steepK" | "flatK">;
+  keratometry: Pick<KeratometryReading, "k1" | "k2">;
   biometry: Pick<BiometryReading, "axialLength" | "acd" | "lensThickness">;
   manual: ManualEyeInput;
   iol: FixedIolInput;

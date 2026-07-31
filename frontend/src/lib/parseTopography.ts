@@ -18,7 +18,9 @@ const DK_LINE = new RegExp(`dk\\s*(${NUM})`, "i");
  *   43.04( 7.84)
  *   dk 0.97( 0.17)
  *
- * into per-eye K1/K2 (steep/flat) readings.
+ * into per-eye K1/K2 readings. The strip prints the two K values without
+ * identifying which is K1 — by the calculator's convention, K1 is always
+ * the lower of the two, whatever order they were printed in.
  */
 export function parseTopographyText(text: string): KeratometryReading[] {
   const readings: KeratometryReading[] = [];
@@ -35,18 +37,18 @@ export function parseTopographyText(text: string): KeratometryReading[] {
       r: parseDecimal(m[2]),
     }));
 
-    const steep = first.k >= second.k ? first : second;
-    const flat = first.k >= second.k ? second : first;
+    const lower = first.k <= second.k ? first : second;
+    const higher = first.k <= second.k ? second : first;
 
     const dkMatch = blockText.match(DK_LINE);
-    const cylinder = dkMatch ? parseDecimal(dkMatch[1]) : steep.k - flat.k;
+    const cylinder = dkMatch ? parseDecimal(dkMatch[1]) : higher.k - lower.k;
 
     readings.push({
       side,
-      steepK: steep.k,
-      flatK: flat.k,
-      steepRadius: steep.r,
-      flatRadius: flat.r,
+      k1: lower.k,
+      k2: higher.k,
+      r1: lower.r,
+      r2: higher.r,
       cylinder,
     });
   }

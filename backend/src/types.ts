@@ -2,9 +2,10 @@ export type EyeSide = "OD" | "OS";
 
 export interface EyeInput {
   side: EyeSide;
+  /** K1 must be the lower of the two K values, K2 the higher (calculator convention). */
   keratometry: {
-    steepK: number;
-    flatK: number;
+    k1: number;
+    k2: number;
   };
   biometry: {
     axialLength: number;

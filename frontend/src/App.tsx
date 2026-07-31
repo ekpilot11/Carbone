@@ -140,7 +140,9 @@ function App() {
         <h2>3. Review &amp; complete</h2>
         <p className="hint">
           Fields marked <span className="ocr-badge">OCR</span> were read from your photos — double-check
-          them. Target refraction isn't on any printout, so enter that by hand.
+          them. The printout doesn't label which K is which, so K1 is always the lower of the two values
+          (swapped automatically if entered the other way round). Target refraction isn't on any printout,
+          so enter that by hand.
         </p>
         <p className="fixed-iol-note">
           IOL: <strong>{IOL_MODEL}</strong> · A-Constant <strong>{A_CONSTANT}</strong> · Lens Factor{" "}
@@ -219,12 +221,12 @@ function EyeForm({ row, title, onChange }: EyeFormProps) {
   return (
     <fieldset className="eye-form">
       <legend>{title}</legend>
-      {field("steepK", "Steep K", "D", true)}
-      {field("flatK", "Flat K", "D", true)}
       {field("axialLength", "Axial Length", "mm", true)}
-      {field("acd", "ACD", "mm", true)}
+      {field("k1", "Measured K1", "D", true)}
+      {field("k2", "Measured K2", "D", true)}
+      {field("acd", "Optical ACD", "mm", true)}
       {field("lensThickness", "Lens Thickness (optional)", "mm", true)}
-      {field("targetRefraction", "Target Refraction", "D", false)}
+      {field("targetRefraction", "Refraction (target)", "D", false)}
     </fieldset>
   );
 }

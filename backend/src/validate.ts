@@ -9,8 +9,11 @@ function validateEye(eye: unknown, side: EyeSide): string | null {
   const e = eye as Partial<EyeInput>;
 
   if (e.side !== side) return `${side}: side mismatch`;
-  if (!isFiniteNumber(e.keratometry?.steepK)) return `${side}: keratometry.steepK must be a number`;
-  if (!isFiniteNumber(e.keratometry?.flatK)) return `${side}: keratometry.flatK must be a number`;
+  if (!isFiniteNumber(e.keratometry?.k1)) return `${side}: keratometry.k1 must be a number`;
+  if (!isFiniteNumber(e.keratometry?.k2)) return `${side}: keratometry.k2 must be a number`;
+  if (e.keratometry.k1 > e.keratometry.k2) {
+    return `${side}: keratometry.k1 must be the lower of the two K values`;
+  }
   if (!isFiniteNumber(e.biometry?.axialLength)) return `${side}: biometry.axialLength must be a number`;
   if (!isFiniteNumber(e.biometry?.acd)) return `${side}: biometry.acd must be a number`;
   if (

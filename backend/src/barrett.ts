@@ -89,8 +89,8 @@ async function locateByLabelText(
 async function fillEye(page: Page, eye: EyeInput, eyeIndex: 0 | 1): Promise<string[]> {
   const attempts: Array<[PerEyeField, string]> = [
     ["axialLength", String(eye.biometry.axialLength)],
-    ["k1", String(eye.keratometry.flatK)],
-    ["k2", String(eye.keratometry.steepK)],
+    ["k1", String(eye.keratometry.k1)],
+    ["k2", String(eye.keratometry.k2)],
     ["acd", String(eye.biometry.acd)],
     ["targetRefraction", String(eye.manual.targetRefraction)],
   ];

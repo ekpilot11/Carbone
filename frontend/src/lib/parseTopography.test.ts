@@ -13,29 +13,38 @@ dk 0.97( 0.17)
 `;
 
 describe("parseTopographyText", () => {
-  it("extracts steep/flat K and radius for both eyes", () => {
+  it("extracts K1/K2 and radii for both eyes, K1 always the lower value", () => {
     const [od, os] = parseTopographyText(SAMPLE);
 
     expect(od).toEqual({
       side: "OD",
-      steepK: 45.06,
-      flatK: 44.16,
-      steepRadius: 7.49,
-      flatRadius: 7.64,
+      k1: 44.16,
+      k2: 45.06,
+      r1: 7.64,
+      r2: 7.49,
       cylinder: 0.9,
     });
 
     expect(os).toEqual({
       side: "OS",
-      steepK: 44.01,
-      flatK: 43.04,
-      steepRadius: 7.67,
-      flatRadius: 7.84,
+      k1: 43.04,
+      k2: 44.01,
+      r1: 7.84,
+      r2: 7.67,
       cylinder: 0.97,
     });
   });
 
-  it("falls back to steepK - flatK when the dk line is missing", () => {
+  it("assigns K1 the lower value even when the strip prints the higher one first", () => {
+    const higherFirst = parseTopographyText(`<R> Sim K's\n45.06( 7.49)\n44.16( 7.64)\n`);
+    const lowerFirst = parseTopographyText(`<R> Sim K's\n44.16( 7.64)\n45.06( 7.49)\n`);
+    for (const [od] of [higherFirst, lowerFirst]) {
+      expect(od.k1).toBe(44.16);
+      expect(od.k2).toBe(45.06);
+    }
+  });
+
+  it("falls back to k2 - k1 when the dk line is missing", () => {
     const [od] = parseTopographyText(`<R> Sim K's\n45.06( 7.49)\n44.16( 7.64)\n`);
     expect(od.cylinder).toBeCloseTo(0.9, 2);
   });
@@ -46,7 +55,7 @@ describe("parseTopographyText", () => {
 
   it("tolerates comma decimals from noisy OCR", () => {
     const [od] = parseTopographyText(`<R> Sim K's\n45,06( 7,49)\n44,16( 7,64)\ndk 0,90( 0,15)\n`);
-    expect(od.steepK).toBe(45.06);
-    expect(od.steepRadius).toBe(7.49);
+    expect(od.k2).toBe(45.06);
+    expect(od.r2).toBe(7.49);
   });
 });
