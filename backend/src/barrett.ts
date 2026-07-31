@@ -4,31 +4,35 @@ import type { CalculateRequest, CalculateResponse, EyeInput } from "./types.js";
 export const CALCULATOR_URL = "https://calc.apacrs.org/barrett_universal2105/";
 
 /**
- * Candidate accessible-label text for each logical field, tried in order.
+ * Field labels transcribed from a screenshot of the live calculator's
+ * "Patient Data" tab (July 2026). The form is a single page for both eyes:
+ * each measurement row has the label once per eye column — OD's "(R)" input
+ * appears before OS's "(L)" in document order — while Lens Factor and
+ * A Constant are form-wide singles (the form reads "Lens Factor ... or
+ * A Constant": entering one may derive the other, so A Constant is filled
+ * before Lens Factor to let Lens Factor win). Doctor/Patient Name and
+ * Patient ID are left blank on purpose — no PHI is ever sent.
  *
- * IMPORTANT: these were written from general knowledge of the Barrett
- * Universal II calculator's typical layout, NOT verified against the live
- * page — this environment's outbound network is blocked from
- * calc.apacrs.org. A real run against the live site returned "could not
- * locate these fields", confirming the guesses are still off. Before relying
- * on this in production, run `npm run inspect` from a machine with normal
- * internet access and replace this map with what it prints. See
- * backend/README.md.
+ * Still not verified end-to-end against a real submission; `npm run
+ * inspect` from an unrestricted machine remains the way to confirm
+ * (see backend/README.md).
  */
-const FIELD_LABELS = {
-  axialLength: ["AL", "Axial Length"],
-  acd: ["ACD"],
-  lensThickness: ["LT", "Lens Thickness"],
-  k1: ["K1", "K 1", "Flat K"],
-  k2: ["K2", "K 2", "Steep K"],
-  aConstant: ["A constant", "A-Constant", "A Constant"],
-  lensFactor: ["Lens Factor", "LF"],
-  targetRefraction: ["Refraction", "Target Refraction", "Ref"],
-  /** Likely a dropdown (Biconvex / Plano Convex / Meniscus), not a text field. */
-  optic: ["Optic", "IOL Optic", "Lens Style"],
+const PER_EYE_FIELDS = {
+  axialLength: ["Axial Length"],
+  k1: ["Measured K1"],
+  k2: ["Measured K2"],
+  acd: ["Optical ACD"],
+  targetRefraction: ["Refraction"],
+  lensThickness: ["Lens Thickness"],
 } as const;
 
-type LogicalField = keyof typeof FIELD_LABELS;
+const SINGLE_FIELDS = {
+  aConstant: ["A Constant"],
+  lensFactor: ["Lens Factor"],
+} as const;
+
+type PerEyeField = keyof typeof PER_EYE_FIELDS;
+type SingleField = keyof typeof SINGLE_FIELDS;
 
 /** Fills a located control regardless of whether it's a text input, a <select>, or a radio/checkbox. */
 async function setLocatorValue(locator: Locator, value: string): Promise<void> {
@@ -53,38 +57,42 @@ async function setLocatorValue(locator: Locator, value: string): Promise<void> {
 }
 
 /**
- * The calculator's OD/OS inputs are assumed to share the same labels, with
- * OD's field appearing before OS's in DOM order (a common left-to-right
- * layout convention) — index 0 for OD, 1 for OS. Unverified; confirm with
- * `npm run inspect`.
+ * Finds the Nth control for a visible label. Tries an accessible
+ * label association first; the page predates those conventions, so the
+ * workhorse is the fallback: anchor on the Nth occurrence of the label
+ * text and take the first form control after it in document order.
  */
-async function fillFieldForEye(
+async function locateByLabelText(
   page: Page,
-  field: LogicalField,
-  eyeIndex: 0 | 1,
-  value: string,
-): Promise<boolean> {
-  for (const label of FIELD_LABELS[field]) {
-    const locator = page.getByLabel(label, { exact: false });
-    const count = await locator.count();
-    if (count > eyeIndex) {
-      await setLocatorValue(locator.nth(eyeIndex), value);
-      return true;
+  labels: readonly string[],
+  occurrence: number,
+): Promise<Locator | null> {
+  for (const label of labels) {
+    const byLabel = page.getByLabel(label, { exact: false });
+    if ((await byLabel.count()) > occurrence) {
+      return byLabel.nth(occurrence);
+    }
+
+    const anchors = page.getByText(label, { exact: false });
+    if ((await anchors.count()) > occurrence) {
+      const control = anchors
+        .nth(occurrence)
+        .locator("xpath=following::*[self::input or self::select][not(@type='hidden')][1]");
+      if ((await control.count()) > 0) {
+        return control.first();
+      }
     }
   }
-  return false;
+  return null;
 }
 
 async function fillEye(page: Page, eye: EyeInput, eyeIndex: 0 | 1): Promise<string[]> {
-  const attempts: Array<[LogicalField, string]> = [
+  const attempts: Array<[PerEyeField, string]> = [
+    ["axialLength", String(eye.biometry.axialLength)],
     ["k1", String(eye.keratometry.flatK)],
     ["k2", String(eye.keratometry.steepK)],
-    ["axialLength", String(eye.biometry.axialLength)],
     ["acd", String(eye.biometry.acd)],
-    ["aConstant", String(eye.iol.aConstant)],
-    ["lensFactor", String(eye.iol.lensFactor)],
     ["targetRefraction", String(eye.manual.targetRefraction)],
-    ["optic", eye.iol.iolModel],
   ];
   if (eye.biometry.lensThickness !== undefined) {
     attempts.push(["lensThickness", String(eye.biometry.lensThickness)]);
@@ -92,8 +100,31 @@ async function fillEye(page: Page, eye: EyeInput, eyeIndex: 0 | 1): Promise<stri
 
   const missing: string[] = [];
   for (const [field, value] of attempts) {
-    const filled = await fillFieldForEye(page, field, eyeIndex, value);
-    if (!filled) missing.push(`${eye.side} ${field}`);
+    const control = await locateByLabelText(page, PER_EYE_FIELDS[field], eyeIndex);
+    if (control) {
+      await setLocatorValue(control, value);
+    } else {
+      missing.push(`${eye.side} ${field}`);
+    }
+  }
+  return missing;
+}
+
+async function fillSingles(page: Page, request: CalculateRequest): Promise<string[]> {
+  // Both eyes carry identical fixed IOL constants; validated upstream.
+  const attempts: Array<[SingleField, string]> = [
+    ["aConstant", String(request.od.iol.aConstant)],
+    ["lensFactor", String(request.od.iol.lensFactor)],
+  ];
+
+  const missing: string[] = [];
+  for (const [field, value] of attempts) {
+    const control = await locateByLabelText(page, SINGLE_FIELDS[field], 0);
+    if (control) {
+      await setLocatorValue(control, value);
+    } else {
+      missing.push(field);
+    }
   }
   return missing;
 }
@@ -118,8 +149,8 @@ async function extractResultsText(page: Page): Promise<string> {
 }
 
 const UNVERIFIED_WARNING =
-  "This automation's field selectors were written without access to the live calculator " +
-  "and have not been verified end-to-end. Confirm every number against calc.apacrs.org before clinical use.";
+  "Field mapping was matched to a screenshot of the calculator but has not been verified " +
+  "with a real end-to-end submission. Confirm every number against calc.apacrs.org before clinical use.";
 
 export async function runBarrettCalculation(request: CalculateRequest): Promise<CalculateResponse> {
   const browser = await chromium.launch({ headless: true });
@@ -128,6 +159,7 @@ export async function runBarrettCalculation(request: CalculateRequest): Promise<
     await page.goto(CALCULATOR_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
 
     const missing = [
+      ...(await fillSingles(page, request)),
       ...(await fillEye(page, request.od, 0)),
       ...(await fillEye(page, request.os, 1)),
     ];
@@ -140,8 +172,8 @@ export async function runBarrettCalculation(request: CalculateRequest): Promise<
       );
     }
 
-    await page.getByRole("button", { name: /calculate/i }).click();
-    await page.waitForTimeout(2000);
+    await page.getByRole("button", { name: /^calculate$/i }).click();
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
 
     const resultsText = await extractResultsText(page);
     return { resultsText, warning: UNVERIFIED_WARNING };

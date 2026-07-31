@@ -4,14 +4,18 @@ Express server exposing `POST /api/calculate`, which drives a headless
 Chromium (via Playwright) to fill scanned/reviewed clinical values into
 https://calc.apacrs.org/barrett_universal2105/ and scrape back the results.
 
-## ⚠️ Selectors are unverified — do this first
+## ⚠️ Field mapping is screenshot-derived, not yet verified end-to-end
 
 This code was written in a sandbox where outbound requests to
-`calc.apacrs.org` were blocked at the network level, so the field selectors
-in `src/barrett.ts` (`FIELD_LABELS`) are a best guess based on the
-calculator's typical layout, not a confirmed match to the live DOM — and a
-real run against the live site confirmed the guess was wrong (`could not
-locate these fields`). Before trusting this in any real use:
+`calc.apacrs.org` were blocked at the network level. The field mapping in
+`src/barrett.ts` (`PER_EYE_FIELDS` / `SINGLE_FIELDS`) was transcribed from
+a screenshot of the live form's "Patient Data" tab (July 2026): per-eye
+rows labeled Axial Length / Measured K1 / Measured K2 / Optical ACD /
+Refraction / Lens Thickness with the (R) input before the (L) one, plus
+form-wide Lens Factor and A Constant singles. Because the page likely has
+no programmatic label-input association, the locator anchors on the visible
+label text and takes the next form control in document order — plausible,
+but unconfirmed against the real DOM. Before trusting this in any real use:
 
 1. From a machine with normal internet access, run:
 
@@ -23,29 +27,30 @@ locate these fields`). Before trusting this in any real use:
    This prints every input/select/textarea on the live page (its label
    text, `id`, `name`, `placeholder`) plus every button's text, as JSON.
 
-2. Compare that output against `FIELD_LABELS` in `src/barrett.ts`. Update
-   the label strings so `page.getByLabel(...)` actually matches, and
-   confirm the assumption that OD's inputs come before OS's in DOM order
-   (search for `eyeIndex` in `barrett.ts` — if the site's layout puts OS
-   first, or nests OD/OS in separate containers instead of relying on
-   document order, rewrite `fillFieldForEye` to scope by container instead).
-   The `optic` field (IOL design — this practice always sends "Biconvex",
-   see `src/constants.ts`) is likely a `<select>`; the inspect script prints
-   each `<select>`'s `options` list so you can confirm "Biconvex" is a valid
-   option label there, not just a guess.
+2. Compare that output against `PER_EYE_FIELDS` / `SINGLE_FIELDS` in
+   `src/barrett.ts` and against `locateByLabelText`'s
+   label-text-then-next-control heuristic. If the dump shows stable input
+   `id`s/`name`s (an ASP.NET-style page usually has them), prefer replacing
+   the text-anchored lookup with direct id/name selectors — that's far more
+   robust than any label heuristic.
 
-3. Also confirm the "Calculate" button's accessible name and how results
+3. Check how the form links "Lens Factor ... or A Constant": if typing in
+   one autocalculates the other via a postback, filling both (A Constant
+   first, Lens Factor second, the current order) may need to become
+   fill-one-only.
+
+4. Also confirm the "Calculate" button's accessible name and how results
    are rendered, and adjust `extractResultsText` in `barrett.ts` if the
    heuristics there (look for an "IOL Power" heading, else the last
    `<table>`, else the whole page) don't land on the right content.
 
-4. Run an end-to-end request against the real site and read the response
+5. Run an end-to-end request against the real site and read the response
    `resultsText` to confirm it's sane before removing/relying past the
    `warning` field the API currently always returns.
 
 Until this verification happens, every `/api/calculate` response includes
 a `warning` telling the caller to double-check results manually — don't
-remove that until step 4 above is actually done.
+remove that until step 5 above is actually done.
 
 ## Running
 
