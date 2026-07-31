@@ -20,6 +20,8 @@ interface FieldInfo {
   placeholder: string | null;
   ariaLabel: string | null;
   nearbyLabel: string | null;
+  /** For <select> elements only — the option labels/values to pick from (e.g. the Optic dropdown). */
+  options: { label: string; value: string }[] | null;
 }
 
 async function main() {
@@ -32,6 +34,7 @@ async function main() {
       const withId = el.id ? document.querySelector(`label[for="${el.id}"]`) : null;
       const label = el.closest("label")?.textContent?.trim() ?? withId?.textContent?.trim() ?? null;
       const input = el as HTMLInputElement;
+      const isSelect = el.tagName.toLowerCase() === "select";
       return {
         tag: el.tagName.toLowerCase(),
         type: input.type ?? null,
@@ -40,6 +43,9 @@ async function main() {
         placeholder: input.placeholder || null,
         ariaLabel: el.getAttribute("aria-label"),
         nearbyLabel: label,
+        options: isSelect
+          ? Array.from((el as HTMLSelectElement).options).map((o) => ({ label: o.label, value: o.value }))
+          : null,
       };
     }),
   );

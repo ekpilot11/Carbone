@@ -9,8 +9,9 @@ https://calc.apacrs.org/barrett_universal2105/ and scrape back the results.
 This code was written in a sandbox where outbound requests to
 `calc.apacrs.org` were blocked at the network level, so the field selectors
 in `src/barrett.ts` (`FIELD_LABELS`) are a best guess based on the
-calculator's typical layout, not a confirmed match to the live DOM. Before
-trusting this in any real use:
+calculator's typical layout, not a confirmed match to the live DOM — and a
+real run against the live site confirmed the guess was wrong (`could not
+locate these fields`). Before trusting this in any real use:
 
 1. From a machine with normal internet access, run:
 
@@ -28,6 +29,10 @@ trusting this in any real use:
    (search for `eyeIndex` in `barrett.ts` — if the site's layout puts OS
    first, or nests OD/OS in separate containers instead of relying on
    document order, rewrite `fillFieldForEye` to scope by container instead).
+   The `optic` field (IOL design — this practice always sends "Biconvex",
+   see `src/constants.ts`) is likely a `<select>`; the inspect script prints
+   each `<select>`'s `options` list so you can confirm "Biconvex" is a valid
+   option label there, not just a guess.
 
 3. Also confirm the "Calculate" button's accessible name and how results
    are rendered, and adjust `extractResultsText` in `barrett.ts` if the
@@ -55,8 +60,13 @@ Environment: `PORT` (default `4000`).
 ## Endpoints
 
 - `POST /api/calculate` — body: `{ od: EyeInput, os: EyeInput }` (see
-  `src/types.ts`). Returns `{ resultsText, warning? }` on success, or
-  `{ error }` with a 4xx/5xx status.
+  `src/types.ts`). `manual` holds the one clinician-entered value (target
+  refraction); `iol` holds the fixed IOL design/constants from
+  `src/constants.ts` (expected to be `Biconvex` / `118.4` / `1.57` for this
+  practice, but still validated per-request rather than hardcoded
+  server-side, so a future frontend change doesn't require a backend
+  redeploy). Returns `{ resultsText, warning? }` on success, or `{ error }`
+  with a 4xx/5xx status.
 - `GET /healthz` — liveness check.
 
 ## Notes

@@ -11,6 +11,7 @@ import {
   toEyeInput,
   type EyeRowState,
 } from "./lib/eyeRow";
+import { A_CONSTANT, IOL_MODEL, LENS_FACTOR } from "./lib/constants";
 import { parseBiometryText } from "./lib/parseBiometry";
 import { parseTopographyText } from "./lib/parseTopography";
 import { recognizeText } from "./lib/ocr";
@@ -139,7 +140,11 @@ function App() {
         <h2>3. Review &amp; complete</h2>
         <p className="hint">
           Fields marked <span className="ocr-badge">OCR</span> were read from your photos — double-check
-          them. IOL model, IOL constant and target refraction aren't on any printout, so enter those by hand.
+          them. Target refraction isn't on any printout, so enter that by hand.
+        </p>
+        <p className="fixed-iol-note">
+          IOL: <strong>{IOL_MODEL}</strong> · A-Constant <strong>{A_CONSTANT}</strong> · Lens Factor{" "}
+          <strong>{LENS_FACTOR}</strong> — fixed for this practice, sent with every calculation.
         </p>
         <div className="eye-forms">
           <EyeForm row={rows.OD} title="OD (right eye)" onChange={updateField} />
@@ -203,7 +208,7 @@ function EyeForm({ row, title, onChange }: EyeFormProps) {
         {label} {unit && `(${unit})`} {ocr && <span className="ocr-badge">OCR</span>}
       </span>
       <input
-        type={key === "iolModel" ? "text" : "number"}
+        type="number"
         step="0.01"
         value={row[key]}
         onChange={(e) => onChange(row.side, key, e.target.value)}
@@ -219,8 +224,6 @@ function EyeForm({ row, title, onChange }: EyeFormProps) {
       {field("axialLength", "Axial Length", "mm", true)}
       {field("acd", "ACD", "mm", true)}
       {field("lensThickness", "Lens Thickness (optional)", "mm", true)}
-      {field("iolModel", "IOL Model", "", false)}
-      {field("iolConstant", "IOL Constant", "", false)}
       {field("targetRefraction", "Target Refraction", "D", false)}
     </fieldset>
   );

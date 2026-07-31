@@ -19,11 +19,12 @@ function validateEye(eye: unknown, side: EyeSide): string | null {
   ) {
     return `${side}: biometry.lensThickness must be a number when present`;
   }
-  if (typeof e.manual?.iolModel !== "string" || e.manual.iolModel.trim() === "") {
-    return `${side}: manual.iolModel must be a non-empty string`;
-  }
-  if (!isFiniteNumber(e.manual?.iolConstant)) return `${side}: manual.iolConstant must be a number`;
   if (!isFiniteNumber(e.manual?.targetRefraction)) return `${side}: manual.targetRefraction must be a number`;
+  if (typeof e.iol?.iolModel !== "string" || e.iol.iolModel.trim() === "") {
+    return `${side}: iol.iolModel must be a non-empty string`;
+  }
+  if (!isFiniteNumber(e.iol?.aConstant)) return `${side}: iol.aConstant must be a number`;
+  if (!isFiniteNumber(e.iol?.lensFactor)) return `${side}: iol.lensFactor must be a number`;
 
   return null;
 }

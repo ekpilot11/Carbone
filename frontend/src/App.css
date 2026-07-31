@@ -136,6 +136,16 @@ button.secondary,
   vertical-align: middle;
 }
 
+.fixed-iol-note {
+  background: #eef2f7;
+  border: 1px solid #dde2e8;
+  border-radius: 8px;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.85rem;
+  color: #384250;
+  margin: 0 0 1rem;
+}
+
 .eye-forms {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));

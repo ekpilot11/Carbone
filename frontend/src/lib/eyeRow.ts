@@ -1,3 +1,4 @@
+import { A_CONSTANT, IOL_MODEL, LENS_FACTOR } from "./constants";
 import type { BiometryReading, EyeInput, EyeSide, KeratometryReading } from "./types";
 
 export interface EyeRowState {
@@ -7,8 +8,6 @@ export interface EyeRowState {
   axialLength: string;
   acd: string;
   lensThickness: string;
-  iolModel: string;
-  iolConstant: string;
   targetRefraction: string;
 }
 
@@ -20,8 +19,6 @@ export function emptyRow(side: EyeSide): EyeRowState {
     axialLength: "",
     acd: "",
     lensThickness: "",
-    iolModel: "",
-    iolConstant: "",
     targetRefraction: "",
   };
 }
@@ -44,15 +41,9 @@ export function applyBiometry(row: EyeRowState, reading: BiometryReading): EyeRo
 }
 
 export function isRowComplete(row: EyeRowState): boolean {
-  return [
-    row.steepK,
-    row.flatK,
-    row.axialLength,
-    row.acd,
-    row.iolModel,
-    row.iolConstant,
-    row.targetRefraction,
-  ].every((value) => value.trim() !== "");
+  return [row.steepK, row.flatK, row.axialLength, row.acd, row.targetRefraction].every(
+    (value) => value.trim() !== "",
+  );
 }
 
 export function toEyeInput(row: EyeRowState): EyeInput {
@@ -64,11 +55,8 @@ export function toEyeInput(row: EyeRowState): EyeInput {
       acd: Number(row.acd),
       lensThickness: row.lensThickness.trim() === "" ? undefined : Number(row.lensThickness),
     },
-    manual: {
-      iolModel: row.iolModel,
-      iolConstant: Number(row.iolConstant),
-      targetRefraction: Number(row.targetRefraction),
-    },
+    manual: { targetRefraction: Number(row.targetRefraction) },
+    iol: { iolModel: IOL_MODEL, aConstant: A_CONSTANT, lensFactor: LENS_FACTOR },
   };
 }
 
@@ -80,8 +68,9 @@ export function formatRowForClipboard(row: EyeRowState): string {
     `  Axial Length: ${row.axialLength || "?"} mm`,
     `  ACD: ${row.acd || "?"} mm`,
     row.lensThickness ? `  Lens Thickness: ${row.lensThickness} mm` : null,
-    `  IOL Model: ${row.iolModel || "?"}`,
-    `  IOL Constant: ${row.iolConstant || "?"}`,
+    `  IOL Optic: ${IOL_MODEL}`,
+    `  A-Constant: ${A_CONSTANT}`,
+    `  Lens Factor: ${LENS_FACTOR}`,
     `  Target Refraction: ${row.targetRefraction || "?"} D`,
   ]
     .filter((line): line is string => line !== null)

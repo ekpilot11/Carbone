@@ -12,9 +12,13 @@ export interface EyeInput {
     lensThickness?: number;
   };
   manual: {
-    iolModel: string;
-    iolConstant: number;
     targetRefraction: number;
+  };
+  /** Fixed for this practice — see constants.ts. Validated but not chosen per request. */
+  iol: {
+    iolModel: string;
+    aConstant: number;
+    lensFactor: number;
   };
 }
 

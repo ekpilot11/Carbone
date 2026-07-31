@@ -26,14 +26,17 @@ export interface BiometryReading {
   vitreousDepth?: number;
 }
 
-/** Fields a clinician must supply by hand; not present on any scanned printout. */
+/** The only field a clinician must still supply by hand; not present on any scanned printout. */
 export interface ManualEyeInput {
-  /** IOL model name as listed on the Barrett calculator (e.g. "Alcon SN60WF"). */
-  iolModel: string;
-  /** IOL constant for the chosen model/formula (A-constant, pACD, or Surgeon Factor). */
-  iolConstant: number;
   /** Desired postoperative spherical equivalent, in diopters. */
   targetRefraction: number;
+}
+
+/** IOL fields fixed for this practice — see lib/constants.ts. Sent with every request. */
+export interface FixedIolInput {
+  iolModel: string;
+  aConstant: number;
+  lensFactor: number;
 }
 
 export interface EyeInput {
@@ -41,4 +44,5 @@ export interface EyeInput {
   keratometry: Pick<KeratometryReading, "steepK" | "flatK">;
   biometry: Pick<BiometryReading, "axialLength" | "acd" | "lensThickness">;
   manual: ManualEyeInput;
+  iol: FixedIolInput;
 }

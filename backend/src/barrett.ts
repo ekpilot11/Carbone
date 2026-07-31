@@ -1,4 +1,4 @@
-import { chromium, type Page } from "playwright";
+import { chromium, type Locator, type Page } from "playwright";
 import type { CalculateRequest, CalculateResponse, EyeInput } from "./types.js";
 
 export const CALCULATOR_URL = "https://calc.apacrs.org/barrett_universal2105/";
@@ -9,22 +9,48 @@ export const CALCULATOR_URL = "https://calc.apacrs.org/barrett_universal2105/";
  * IMPORTANT: these were written from general knowledge of the Barrett
  * Universal II calculator's typical layout, NOT verified against the live
  * page — this environment's outbound network is blocked from
- * calc.apacrs.org. Before relying on this in production, run `npm run
- * inspect` from a machine with normal internet access and update this map
- * (and the eye-column heuristic below) to match what it prints. See
+ * calc.apacrs.org. A real run against the live site returned "could not
+ * locate these fields", confirming the guesses are still off. Before relying
+ * on this in production, run `npm run inspect` from a machine with normal
+ * internet access and replace this map with what it prints. See
  * backend/README.md.
  */
 const FIELD_LABELS = {
-  axialLength: ["Axial Length", "AL"],
-  acd: ["ACD", "Anterior Chamber Depth"],
-  lensThickness: ["Lens Thickness", "LT"],
-  k1: ["K1", "Flat K", "K Flat"],
-  k2: ["K2", "Steep K", "K Steep"],
-  iolConstant: ["A-Constant", "A Constant", "pACD", "Surgeon Factor", "Lens Factor"],
-  targetRefraction: ["Target Refraction", "Refraction"],
+  axialLength: ["AL", "Axial Length"],
+  acd: ["ACD"],
+  lensThickness: ["LT", "Lens Thickness"],
+  k1: ["K1", "K 1", "Flat K"],
+  k2: ["K2", "K 2", "Steep K"],
+  aConstant: ["A constant", "A-Constant", "A Constant"],
+  lensFactor: ["Lens Factor", "LF"],
+  targetRefraction: ["Refraction", "Target Refraction", "Ref"],
+  /** Likely a dropdown (Biconvex / Plano Convex / Meniscus), not a text field. */
+  optic: ["Optic", "IOL Optic", "Lens Style"],
 } as const;
 
 type LogicalField = keyof typeof FIELD_LABELS;
+
+/** Fills a located control regardless of whether it's a text input, a <select>, or a radio/checkbox. */
+async function setLocatorValue(locator: Locator, value: string): Promise<void> {
+  const tagName = await locator.evaluate((el) => el.tagName.toLowerCase());
+
+  if (tagName === "select") {
+    try {
+      await locator.selectOption({ label: value });
+    } catch {
+      await locator.selectOption(value);
+    }
+    return;
+  }
+
+  const inputType = await locator.evaluate((el) => (el as HTMLInputElement).type ?? "");
+  if (inputType === "radio" || inputType === "checkbox") {
+    await locator.check();
+    return;
+  }
+
+  await locator.fill(value);
+}
 
 /**
  * The calculator's OD/OS inputs are assumed to share the same labels, with
@@ -42,7 +68,7 @@ async function fillFieldForEye(
     const locator = page.getByLabel(label, { exact: false });
     const count = await locator.count();
     if (count > eyeIndex) {
-      await locator.nth(eyeIndex).fill(value);
+      await setLocatorValue(locator.nth(eyeIndex), value);
       return true;
     }
   }
@@ -55,8 +81,10 @@ async function fillEye(page: Page, eye: EyeInput, eyeIndex: 0 | 1): Promise<stri
     ["k2", String(eye.keratometry.steepK)],
     ["axialLength", String(eye.biometry.axialLength)],
     ["acd", String(eye.biometry.acd)],
-    ["iolConstant", String(eye.manual.iolConstant)],
+    ["aConstant", String(eye.iol.aConstant)],
+    ["lensFactor", String(eye.iol.lensFactor)],
     ["targetRefraction", String(eye.manual.targetRefraction)],
+    ["optic", eye.iol.iolModel],
   ];
   if (eye.biometry.lensThickness !== undefined) {
     attempts.push(["lensThickness", String(eye.biometry.lensThickness)]);
