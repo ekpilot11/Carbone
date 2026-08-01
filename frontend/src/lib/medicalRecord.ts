@@ -25,6 +25,8 @@ export interface MedicalRecordInput {
   patientName: string;
   recordedAt: Date;
   lens: { name: string; lensFactor?: string; aConstant?: string };
+  /** The keratometric index the calculation ran with; it changes every power. */
+  kIndex?: string;
   eyes: MedicalRecordEye[];
   /** The record follows the language the app is being used in. */
   lang: Lang;
@@ -99,6 +101,7 @@ export function buildMedicalRecordDocument(input: MedicalRecordInput): PdfDocume
     t.pdfLens,
     constants.length > 0 ? `${input.lens.name} (${constants.join(", ")})` : input.lens.name,
   );
+  if (input.kIndex) labelled(t.pdfKIndex, input.kIndex);
 
   for (const eye of input.eyes) {
     y += 16;

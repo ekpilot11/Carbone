@@ -105,6 +105,18 @@ If a lens name ever stops matching the site's list, the run stops and the
 error names every option the site offers — it never silently substitutes a
 different lens.
 
+## K Index
+
+The calculator's keratometric index radio (1.3375 / 1.332) is on the form
+too, defaulting to 1.3375 as the site does. It decides how the site reads
+your K values, so it changes every power returned — leave it alone unless
+your keratometer reports against 1.332. The chosen index is sent with the
+run, shown with the results, and printed on the PDF record.
+
+If the automation cannot select a **non-default** index it stops without
+submitting, rather than let the site compute against 1.3375 and hand back
+plausible wrong powers.
+
 ## Medical record (PDF)
 
 After a calculation, the results view offers a one-page PDF holding each

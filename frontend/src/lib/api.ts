@@ -4,6 +4,8 @@ import type { EyeInput, EyeSide } from "./types";
 export interface CalculateRequest {
   od?: EyeInput;
   os?: EyeInput;
+  /** The calculator's keratometric index radio, form-wide: "1.3375" or "1.332". */
+  kIndex?: string;
 }
 
 export interface IolTableRow {
@@ -21,6 +23,8 @@ export interface CalculateResponse {
   tables?: { od: IolTableRow[]; os: IolTableRow[] };
   /** The lens the calculator actually had selected, with the constants it used. */
   lens?: { name: string; lensFactor?: string; aConstant?: string };
+  /** The keratometric index the form had selected when Calculate was clicked. */
+  kIndex?: string;
   /** Set when the automation could not confirm it read the page it expected (see backend README). */
   warning?: string;
 }

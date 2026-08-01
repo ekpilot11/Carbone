@@ -35,6 +35,11 @@ export interface EyeInput {
 export interface CalculateRequest {
   od?: EyeInput;
   os?: EyeInput;
+  /**
+   * The calculator's keratometric index radio, form-wide like the lens:
+   * "1.3375" (the site's default) or "1.332". Absent means the default.
+   */
+  kIndex?: string;
 }
 
 export interface IolTableRow {
@@ -56,5 +61,7 @@ export interface CalculateResponse {
    * site, not from us, so this is the only record of what was used.
    */
   lens?: { name: string; lensFactor?: string; aConstant?: string };
+  /** The keratometric index the form had selected when Calculate was clicked. */
+  kIndex?: string;
   warning?: string;
 }

@@ -21,3 +21,13 @@ export function constantInRange(value: string, range: { min: number; max: number
   const parsed = Number(value);
   return value.trim() !== "" && Number.isFinite(parsed) && parsed >= range.min && parsed <= range.max;
 }
+
+/**
+ * The calculator's keratometric index radio pair, at the top of its form.
+ * 1.3375 is the site's default and what nearly every keratometer reports
+ * against; 1.332 is the true corneal refractive index, used by some
+ * devices. Kept as strings so they match the site's own labels exactly.
+ */
+export const K_INDEX_OPTIONS = ["1.3375", "1.332"] as const;
+export type KIndex = (typeof K_INDEX_OPTIONS)[number];
+export const DEFAULT_K_INDEX: KIndex = "1.3375";

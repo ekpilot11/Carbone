@@ -110,6 +110,9 @@ Environment: `PORT` (default `4000`).
   redeploy) plus `iol.lens`. Returns
   `{ resultsText, recommended?, tables?, lens?, warning? }` on success, or
   `{ error }` with a 4xx/5xx status.
+  `kIndex` is form-wide and optional (`"1.3375"` — the site's default — or
+  `"1.332"`); it comes back on the response as the index the form actually
+  had selected.
 - `GET /api/lenses` — the lens dropdown's options, read off the live
   calculator and cached for the process lifetime. Headless-only and
   best-effort: it returns 502 when the site is unreachable or challenged,
@@ -154,6 +157,20 @@ A wrong constant printed on a clinical record is worse than a missing one.
 
 Both eyes must carry the same lens and constants — the dropdown is
 form-wide, so a mismatched request is rejected rather than half-honoured.
+
+## K Index
+
+The keratometric index radio is set before anything else is typed, since it
+governs how the site reads the K values. Its two labels ("K Index 1.3375" /
+"K Index 1.332") can share a single DOM node, in which case a label-anchored
+lookup resolves both to the same radio — so `locateKIndexRadio` tries, in
+order: the `value` attribute; the labels, but only when they resolve to
+different controls; and document order, but only when the form's radios are
+exactly that pair. If none of those decide it, a **non-default** index
+aborts the run rather than let the site calculate against its default and
+return plausible wrong powers; failing to confirm the default only adds a
+warning, since that is the state the page loads in. Verified against mock
+forms in all three shapes plus an undecidable one.
 
 ## Cloudflare bot protection — why a browser window sometimes opens
 

@@ -249,6 +249,26 @@ button.secondary,
   flex: 0 1 130px;
 }
 
+/* The site's K-index radio pair, kept beside the constants it affects. */
+.k-index-field {
+  flex: 0 1 auto;
+}
+
+.k-index-options {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.5rem 0;
+}
+
+.k-index-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
 .constant-field input[readonly] {
   background: #eef2f7;
   color: #5b6470;

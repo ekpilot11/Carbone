@@ -1,3 +1,4 @@
+import { K_INDEX_OPTIONS } from "./constants.js";
 import type { CalculateRequest, EyeInput, EyeSide } from "./types.js";
 
 function isFiniteNumber(value: unknown): value is number {
@@ -52,6 +53,13 @@ export function validateCalculateRequest(body: unknown): string | null {
   if (req.od === undefined && req.os === undefined) {
     return "Request must include at least one eye (od or os)";
   }
+  if (
+    req.kIndex !== undefined &&
+    !(K_INDEX_OPTIONS as readonly string[]).includes(req.kIndex)
+  ) {
+    return `kIndex must be one of: ${K_INDEX_OPTIONS.join(", ")}`;
+  }
+
   const perEye =
     (req.od !== undefined ? validateEye(req.od, "OD") : null) ??
     (req.os !== undefined ? validateEye(req.os, "OS") : null);

@@ -21,7 +21,16 @@ import {
   type EyeRowState,
   type LensSettings,
 } from "./lib/eyeRow";
-import { A_CONSTANT, CONSTANT_RANGES, constantInRange, IOL_MODEL, LENS_FACTOR } from "./lib/constants";
+import {
+  A_CONSTANT,
+  CONSTANT_RANGES,
+  constantInRange,
+  DEFAULT_K_INDEX,
+  IOL_MODEL,
+  K_INDEX_OPTIONS,
+  LENS_FACTOR,
+  type KIndex,
+} from "./lib/constants";
 import {
   initialLanguage,
   LANGUAGES,
@@ -83,6 +92,7 @@ function App() {
     rows: Record<EyeSide, EyeRowState>;
     sides: EyeSide[];
     settings: LensSettings;
+    kIndex: KIndex;
   } | null>(null);
   const [calcError, setCalcError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -95,6 +105,9 @@ function App() {
     aConstant: String(A_CONSTANT),
   });
   const [lensOptions, setLensOptions] = useState<readonly string[]>(BUNDLED_LENS_OPTIONS);
+  // The calculator's own K-index radio. It governs how the site reads the K
+  // values, so it is sent with every run and recorded on the PDF.
+  const [kIndex, setKIndex] = useState<KIndex>(DEFAULT_K_INDEX);
   const settings: LensSettings = { lens, ...constants };
   // Filled from the photo when the name is legible, and editable either
   // way. It heads the PDF record and is never sent to the calculator.
@@ -348,9 +361,10 @@ function App() {
       const response = await calculateBarrett({
         od: plan.sides.includes("OD") ? toEyeInput(rows.OD, sent) : undefined,
         os: plan.sides.includes("OS") ? toEyeInput(rows.OS, sent) : undefined,
+        kIndex,
       });
       setResult(response);
-      setSubmitted({ rows, sides: plan.sides, settings: sent });
+      setSubmitted({ rows, sides: plan.sides, settings: sent, kIndex });
     } catch (err) {
       setCalcError(err instanceof Error ? err.message : t.calcFailed);
     } finally {
@@ -371,6 +385,7 @@ function App() {
       patientName,
       recordedAt: new Date(),
       lang,
+      kIndex: result.kIndex ?? submitted.kIndex,
       lens: {
         name: result.lens?.name ?? submitted.settings.lens,
         lensFactor:
@@ -396,6 +411,7 @@ function App() {
       sections.push("OD (right eye)", formatRowForClipboard(rows.OD, settings), "");
     }
     if (!isRowEmpty(rows.OS)) sections.push("OS (left eye)", formatRowForClipboard(rows.OS, settings));
+    if (sections.length > 0) sections.push("", `${t.kIndexLabel}: ${kIndex}`);
     const text = sections.join("\n").trim() || t.noValuesToCopy;
     await navigator.clipboard.writeText(text);
     setCopied(true);
@@ -476,7 +492,25 @@ function App() {
               onChange={(e) => setConstants((c) => ({ ...c, aConstant: e.target.value }))}
             />
           </label>
+          <div className="field k-index-field">
+            <span>{t.kIndexLabel}</span>
+            <div className="k-index-options">
+              {K_INDEX_OPTIONS.map((option) => (
+                <label key={option} className="k-index-option">
+                  <input
+                    type="radio"
+                    name="kIndex"
+                    value={option}
+                    checked={kIndex === option}
+                    onChange={() => setKIndex(option)}
+                  />
+                  {option}
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
+        <p className="hint">{t.kIndexHint(DEFAULT_K_INDEX)}</p>
         <p className="fixed-iol-note">
           {usingPersonalConstant
             ? t.lensPersonalNote(IOL_MODEL)
@@ -576,6 +610,11 @@ function App() {
                   result.lens.aConstant ? `, ${t.pdfAConstant(result.lens.aConstant)}` : "",
                 ].join(""),
               )}
+            </p>
+          )}
+          {result.kIndex && (
+            <p className="hint">
+              {t.kIndexLabel}: <strong>{result.kIndex}</strong>
             </p>
           )}
           <p className="hint">{t.verifyAgainst}</p>

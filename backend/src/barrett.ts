@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium, type Frame, type Locator, type Page } from "playwright";
-import { PERSONAL_CONSTANT } from "./constants.js";
+import { DEFAULT_K_INDEX, K_INDEX_OPTIONS, PERSONAL_CONSTANT } from "./constants.js";
 import type { CalculateRequest, CalculateResponse, EyeInput, IolTableRow } from "./types.js";
 
 export const CALCULATOR_URL = "https://calc.apacrs.org/barrett_universal2105/";
@@ -39,6 +39,9 @@ const PER_EYE_FIELDS = {
 } as const;
 
 const LENS_FACTOR_LABELS = ["Lens Factor"] as const;
+
+/** The keratometric index radio pair at the top of the form. */
+const K_INDEX_LABEL = (kIndex: string) => `K Index ${kIndex}`;
 const A_CONSTANT_LABELS = ["A Constant", "A-Constant"] as const;
 
 /**
@@ -257,6 +260,79 @@ async function fillEye(
     }
   }
   return missing;
+}
+
+/**
+ * Finds the radio for one keratometric index, by three routes in order of
+ * how much they prove.
+ *
+ * The label-anchored route needs a guard the other fields don't: "K Index
+ * 1.3375" and "K Index 1.332" can live in a single DOM node, and then both
+ * lookups resolve to the same first radio — checking it would silently
+ * calculate against the wrong index. So that route is used only when the
+ * two options resolve to different controls.
+ */
+async function locateKIndexRadio(root: SearchRoot, kIndex: string): Promise<Locator | null> {
+  // 1. The value attribute carries the index itself.
+  const byValue = root.locator(`input[type=radio][value="${kIndex}"]`);
+  if ((await byValue.count().catch(() => 0)) === 1) return byValue.first();
+
+  const wanted = (K_INDEX_OPTIONS as readonly string[]).indexOf(kIndex);
+  if (wanted < 0) return null;
+
+  // 2. Label text, but only when the two labels are distinguishable.
+  const located = await Promise.all(
+    K_INDEX_OPTIONS.map((option) => locateByLabelText(root, [K_INDEX_LABEL(option)], 0)),
+  );
+  const identities = await Promise.all(
+    located.map((control) =>
+      control
+        ? control
+            .evaluate((el) => {
+              const input = el as HTMLInputElement;
+              return `${el.tagName}#${input.id}|${input.name}|${input.value}`;
+            })
+            .catch(() => null)
+        : Promise.resolve(null),
+    ),
+  );
+  if (located[wanted] && identities[0] !== null && identities[0] !== identities[1]) {
+    return located[wanted];
+  }
+
+  // 3. Document order, only when the form's radios are exactly this pair.
+  const radios = root.locator("input[type=radio]");
+  if ((await radios.count().catch(() => 0)) === K_INDEX_OPTIONS.length) {
+    return radios.nth(wanted);
+  }
+  return null;
+}
+
+/**
+ * Selects the keratometric index radio.
+ *
+ * A non-default index that cannot be set aborts the run: the site would
+ * quietly calculate with 1.3375 and the powers would be wrong in a way
+ * nothing downstream could detect. Failing to confirm the default is only
+ * reported, since that is the state the page already loads in.
+ */
+async function selectKIndex(root: SearchRoot, kIndex: string): Promise<string | undefined> {
+  const control = await locateKIndexRadio(root, kIndex);
+  if (control) {
+    await control.check().catch(() => {});
+    if (await control.isChecked().catch(() => false)) return undefined;
+  }
+
+  const problem =
+    `Couldn't select "K Index ${kIndex}" on the calculator — the radio for it ` +
+    `wasn't found, or wouldn't take the click.`;
+  if (kIndex !== DEFAULT_K_INDEX) {
+    throw new Error(
+      `${problem} Nothing was submitted: the site would have calculated with its ` +
+        `default ${DEFAULT_K_INDEX} instead, which would change every power it returned.`,
+    );
+  }
+  return `${problem} The calculator's own default is ${DEFAULT_K_INDEX}, so the results should still be correct — but confirm the K Index on the site.`;
 }
 
 /** The lens dropdown, identified by the options it offers rather than by a label. */
@@ -740,7 +816,12 @@ async function attemptCalculation(
       );
     }
 
-    // The lens goes first: picking one rewrites the constants boxes (and may
+    // The K index goes in before any measurement: it governs how the site
+    // reads the K values, and setting it first keeps that unambiguous.
+    const kIndex = request.kIndex ?? DEFAULT_K_INDEX;
+    const kIndexWarning = await selectKIndex(formRoot, kIndex);
+
+    // The lens goes next: picking one rewrites the constants boxes (and may
     // post back), which would undo anything typed before it.
     const requestedLens = (request.od ?? request.os)?.iol.lens;
     const usePersonalConstant = isPersonalConstant(requestedLens);
@@ -801,6 +882,7 @@ async function attemptCalculation(
         ? `The calculator recalculated the constants you entered (${rewritten.join("; ")}) — ` +
           `it derives one from the other, and the results below use its values.`
         : undefined;
+    const warning = [kIndexWarning, constantsWarning].filter(Boolean).join(" ") || undefined;
 
     await clickCalculate(formRoot);
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
@@ -839,7 +921,8 @@ async function attemptCalculation(
       recommended: { od, os },
       tables,
       lens: lensUsed,
-      warning: constantsWarning,
+      kIndex,
+      warning,
     };
   } finally {
     await browser.close();

@@ -64,6 +64,9 @@ const en = {
   lensLabel: "Lens",
   fieldLensFactor: "Lens Factor",
   fieldAConstant: "A Constant",
+  kIndexLabel: "K Index",
+  kIndexHint: (defaultIndex: string) =>
+    `The keratometric index the calculator reads your K values against. Leave it on ${defaultIndex} unless your keratometer reports against the other one — changing it changes every power returned.`,
   lensPersonalNote: (model: string) =>
     `IOL: ${model} · the two constants above are typed in and sent with every calculation. They start at this practice's own values; edit either one to use something else.`,
   lensNamedNote: (lens: string) =>
@@ -126,6 +129,7 @@ const en = {
   pdfPatient: "Patient",
   pdfDate: "Date",
   pdfLens: "Lens",
+  pdfKIndex: "K Index",
   pdfEyeOd: "OD - Right eye",
   pdfEyeOs: "OS - Left eye",
   pdfAxialLength: "Axial Length",
@@ -197,6 +201,9 @@ const pt: Strings = {
   lensLabel: "Lente",
   fieldLensFactor: "Lens Factor",
   fieldAConstant: "Constante A",
+  kIndexLabel: "Índice K",
+  kIndexHint: (defaultIndex: string) =>
+    `O índice ceratométrico com que a calculadora lê seus valores de K. Mantenha em ${defaultIndex}, a menos que seu ceratômetro use o outro — alterá-lo muda todos os poderes calculados.`,
   lensPersonalNote: (model: string) =>
     `LIO: ${model} · as duas constantes acima são digitadas e enviadas em todo cálculo. Elas começam com os valores próprios deste serviço; altere qualquer uma para usar outros.`,
   lensNamedNote: (lens: string) =>
@@ -261,6 +268,7 @@ const pt: Strings = {
   pdfPatient: "Paciente",
   pdfDate: "Data",
   pdfLens: "Lente",
+  pdfKIndex: "Índice K",
   pdfEyeOd: "OD - Olho direito",
   pdfEyeOs: "OS - Olho esquerdo",
   pdfAxialLength: "Comprimento axial",
