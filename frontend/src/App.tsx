@@ -141,8 +141,8 @@ function App() {
         <p className="hint">
           Fields marked <span className="ocr-badge">OCR</span> were read from your photos — double-check
           them. The printout doesn't label which K is which, so K1 is always the lower of the two values
-          (swapped automatically if entered the other way round). Target refraction isn't on any printout,
-          so enter that by hand.
+          (swapped automatically if entered the other way round). Refraction target defaults to 0
+          (emmetropia) — change it only when the plan differs.
         </p>
         <p className="fixed-iol-note">
           IOL: <strong>{IOL_MODEL}</strong> · A-Constant <strong>{A_CONSTANT}</strong> · Lens Factor{" "}
@@ -181,6 +181,18 @@ function App() {
         <section className="results">
           <h2>Results</h2>
           {result.warning && <p className="scan-message">{result.warning}</p>}
+          {(result.recommended?.od || result.recommended?.os) && (
+            <div className="recommended-row">
+              <div className="recommended-card">
+                <span className="recommended-label">OD — Recommended IOL</span>
+                <span className="recommended-value">{result.recommended?.od ?? "—"} D</span>
+              </div>
+              <div className="recommended-card">
+                <span className="recommended-label">OS — Recommended IOL</span>
+                <span className="recommended-value">{result.recommended?.os ?? "—"} D</span>
+              </div>
+            </div>
+          )}
           <div className="result-card">
             <pre>{result.resultsText}</pre>
           </div>

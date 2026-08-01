@@ -76,6 +76,14 @@ Environment: `PORT` (default `4000`).
 
 ## Notes
 
+- A live run showed the form fills fine but Calculate silently does
+  nothing until the identity fields are non-empty. The automation first
+  clicks Calculate as-is; if no "Recommended IOL" text appears, it fills
+  Doctor Name / Patient Name / Patient ID with a neutral "-" placeholder
+  (never real patient data) and clicks once more. Results are then
+  scraped from the "Right Eye (OD)" panel onward, and the per-eye
+  "Recommended IOL" powers are parsed into the response's `recommended`
+  field.
 - No database, no request logging of clinical values — the process is
   stateless by design (see the privacy section in the root README).
 - CORS is open (`cors()` with defaults) since this is meant to sit behind

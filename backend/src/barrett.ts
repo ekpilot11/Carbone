@@ -37,6 +37,21 @@ const SINGLE_FIELDS = {
 /** Label text that must exist wherever the form actually renders. */
 const FORM_ANCHOR = "Axial Length";
 
+/** Text that only appears once the calculation has actually run. */
+const RESULTS_ANCHOR = /Recommended IOL/i;
+
+/**
+ * The site appears to require the identity fields to be non-empty before
+ * Calculate does anything. These get a neutral placeholder — never real
+ * patient data (the app's no-PHI rule).
+ */
+const IDENTITY_FIELDS: readonly (readonly string[])[] = [
+  ["Doctor Name"],
+  ["Patient Name"],
+  ["Patient ID"],
+];
+const IDENTITY_PLACEHOLDER = "-";
+
 type PerEyeField = keyof typeof PER_EYE_FIELDS;
 type SingleField = keyof typeof SINGLE_FIELDS;
 type SearchRoot = Page | Frame;
@@ -198,23 +213,64 @@ async function clickCalculate(root: SearchRoot): Promise<void> {
   await root.locator('input[type="submit"][value*="alculate"], input[type="button"][value*="alculate"]').first().click();
 }
 
-async function extractResultsText(root: SearchRoot): Promise<string> {
-  const iolPowerHeading = root.locator("text=/IOL Power/i").first();
-  if (await iolPowerHeading.count()) {
-    const table = iolPowerHeading.locator("xpath=ancestor::table[1]");
-    if (await table.count()) {
-      const text = await table.first().innerText().catch(() => null);
-      if (text?.trim()) return text.trim();
+/** Fills identity fields with a neutral placeholder; missing ones are skipped silently. */
+async function fillIdentityPlaceholders(root: SearchRoot): Promise<void> {
+  for (const labels of IDENTITY_FIELDS) {
+    const control = await locateByLabelText(root, labels, 0);
+    if (control) {
+      await setLocatorValue(control, IDENTITY_PLACEHOLDER).catch(() => {});
     }
   }
+}
 
-  const lastTable = root.locator("table").last();
-  if (await lastTable.count()) {
-    const text = await lastTable.innerText().catch(() => null);
-    if (text?.trim()) return text.trim();
+/** Polls the page and every frame until the results text appears. */
+async function findResultsRoot(page: Page, timeoutMs: number): Promise<SearchRoot | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const roots: SearchRoot[] = [page, ...page.frames()];
+    for (const root of roots) {
+      const count = await root
+        .getByText(RESULTS_ANCHOR)
+        .count()
+        .catch(() => 0);
+      if (count > 0) return root;
+    }
+    await page.waitForTimeout(500);
+  }
+  return null;
+}
+
+interface ExtractedResults {
+  text: string;
+  od?: string;
+  os?: string;
+}
+
+/**
+ * The results view lays out a "Right Eye (OD)" panel then a "Left Eye (OS)"
+ * panel, each containing a "Recommended IOL: <power> (<optic>) for Target
+ * Refraction:<n>" line and an IOL Power / Optic / Refraction table.
+ */
+async function extractResults(root: SearchRoot): Promise<ExtractedResults> {
+  const body = (await root.locator("body").innerText()).trim();
+
+  const odStart = body.search(/Right Eye\s*\(OD\)/i);
+  const osStart = body.search(/Left Eye\s*\(OS\)/i);
+  const text = odStart >= 0 ? body.slice(odStart) : body;
+
+  const recommendedIn = (section: string): string | undefined =>
+    section.match(/Recommended IOL:\s*(-?[\d.]+)/i)?.[1];
+
+  let od: string | undefined;
+  let os: string | undefined;
+  if (odStart >= 0 && osStart > odStart) {
+    od = recommendedIn(body.slice(odStart, osStart));
+    os = recommendedIn(body.slice(osStart));
+  } else {
+    od = recommendedIn(text);
   }
 
-  return (await root.locator("body").innerText()).trim();
+  return { text: text.slice(0, 6000), od, os };
 }
 
 const UNVERIFIED_WARNING =
@@ -257,8 +313,28 @@ export async function runBarrettCalculation(request: CalculateRequest): Promise<
     await clickCalculate(formRoot);
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
 
-    const resultsText = await extractResultsText(formRoot);
-    return { resultsText, warning: UNVERIFIED_WARNING };
+    // If no results appeared, the site's validators most likely blocked the
+    // submit over empty identity fields — fill neutral placeholders (never
+    // real patient data) and try once more.
+    let resultsRoot = await findResultsRoot(page, 8000);
+    if (!resultsRoot) {
+      const retryRoot = (await findFormRoot(page, 3000)) ?? formRoot;
+      await fillIdentityPlaceholders(retryRoot);
+      await clickCalculate(retryRoot);
+      await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+      resultsRoot = await findResultsRoot(page, 8000);
+    }
+
+    if (!resultsRoot) {
+      throw new Error(
+        `The form was filled and Calculate was clicked, but no "Recommended IOL" results ever ` +
+          `appeared. The site may be showing a validation message instead — what it displayed: ` +
+          `${await describePage(page)}.`,
+      );
+    }
+
+    const { text, od, os } = await extractResults(resultsRoot);
+    return { resultsText: text, recommended: { od, os }, warning: UNVERIFIED_WARNING };
   } finally {
     await browser.close();
   }

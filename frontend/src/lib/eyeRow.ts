@@ -21,7 +21,8 @@ export function emptyRow(side: EyeSide): EyeRowState {
     axialLength: "",
     acd: "",
     lensThickness: "",
-    targetRefraction: "",
+    // This practice always targets emmetropia; kept as an explicit, editable 0.
+    targetRefraction: "0",
   };
 }
 

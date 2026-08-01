@@ -203,6 +203,37 @@ button.secondary,
   padding: 1rem;
 }
 
+.recommended-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.recommended-card {
+  background: #e8f1fd;
+  border: 1px solid #b9d2f5;
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.recommended-label {
+  font-size: 0.78rem;
+  color: #3b5875;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.recommended-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #16375e;
+}
+
 .result-card pre {
   background: #f4f6f8;
   padding: 0.75rem;

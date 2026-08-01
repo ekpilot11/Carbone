@@ -6,8 +6,10 @@ export interface CalculateRequest {
 }
 
 export interface CalculateResponse {
-  /** Best-effort scrape of the calculator's results panel; not split per eye (see backend README). */
+  /** The calculator's results panel text, from "Right Eye (OD)" onward. */
   resultsText: string;
+  /** Recommended IOL power per eye, parsed out of resultsText when present. */
+  recommended?: { od?: string; os?: string };
   /** Set when the automation could not confirm it read the page it expected (see backend README). */
   warning?: string;
 }

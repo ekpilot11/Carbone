@@ -7,6 +7,10 @@ describe("eyeRow helpers", () => {
     expect(isRowComplete(emptyRow("OD"))).toBe(false);
   });
 
+  it("defaults the refraction target to an explicit 0", () => {
+    expect(emptyRow("OD").targetRefraction).toBe("0");
+  });
+
   it("a row with every field filled in is complete, target refraction of 0 included", () => {
     const row = {
       ...emptyRow("OD"),
