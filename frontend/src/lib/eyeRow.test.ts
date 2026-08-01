@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { A_CONSTANT, IOL_MODEL, LENS_FACTOR } from "./constants";
-import { emptyRow, isRowComplete, isRowEmpty, planCalculation, toEyeInput } from "./eyeRow";
+import { applyBiometry, emptyRow, isRowComplete, isRowEmpty, planCalculation, toEyeInput } from "./eyeRow";
 
 const COMPLETE_OD = {
   ...emptyRow("OD"),
@@ -71,6 +71,31 @@ describe("eyeRow helpers", () => {
     };
     const input = toEyeInput(row);
     expect(input.keratometry).toEqual({ k1: 44.16, k2: 45.06 });
+  });
+
+  it("fills axial length and ACD from a scan but leaves lens thickness for manual entry", () => {
+    const scanned = applyBiometry(emptyRow("OD"), {
+      side: "OD",
+      sideSource: "marker",
+      axialLength: 22.98,
+      acd: 2.79,
+      lensThickness: 4.71,
+    });
+    expect(scanned.axialLength).toBe("22.98");
+    expect(scanned.acd).toBe("2.79");
+    expect(scanned.lensThickness).toBe("");
+  });
+
+  it("keeps a hand-entered lens thickness when a scan is applied over it", () => {
+    const typed = { ...emptyRow("OD"), lensThickness: "4.50" };
+    const scanned = applyBiometry(typed, {
+      side: "OD",
+      sideSource: "marker",
+      axialLength: 22.98,
+      acd: 2.79,
+      lensThickness: 4.71,
+    });
+    expect(scanned.lensThickness).toBe("4.50");
   });
 
   it("treats a fresh row as empty despite the default refraction of 0", () => {

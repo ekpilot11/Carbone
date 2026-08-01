@@ -34,12 +34,16 @@ export function applyKeratometry(row: EyeRowState, reading: KeratometryReading):
   };
 }
 
+/**
+ * Lens thickness is deliberately left for manual entry: it is optional on
+ * the calculator and is not filled from the scan, so whatever the
+ * clinician typed stays untouched.
+ */
 export function applyBiometry(row: EyeRowState, reading: BiometryReading): EyeRowState {
   return {
     ...row,
     axialLength: reading.axialLength.toFixed(2),
     acd: reading.acd.toFixed(2),
-    lensThickness: reading.lensThickness?.toFixed(2) ?? row.lensThickness,
   };
 }
 

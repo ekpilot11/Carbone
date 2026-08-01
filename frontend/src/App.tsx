@@ -384,7 +384,7 @@ function EyeForm({ row, title, onChange, onClear }: EyeFormProps) {
       {field("k1", "Measured K1", "D", true)}
       {field("k2", "Measured K2", "D", true)}
       {field("acd", "Optical ACD", "mm", true)}
-      {field("lensThickness", "Lens Thickness (optional)", "mm", true)}
+      {field("lensThickness", "Lens Thickness (optional)", "mm", false)}
       {field("targetRefraction", "Refraction (target)", "D", false)}
     </fieldset>
   );
