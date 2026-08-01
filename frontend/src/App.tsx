@@ -94,14 +94,20 @@ function App() {
       });
 
       const missing = (["OD", "OS"] as const).filter((side) => !found.has(side));
-      const assumedOrder = [...biometry.values()].some((r) => r.sideSource === "order");
       const notes: string[] = [];
       if (missing.length === 1) {
-        notes.push(`Only ${found.keys().next().value} could be read — check ${missing[0]} by hand.`);
+        const readSide = [...found.keys()][0];
+        notes.push(`Only ${readSide} could be read — enter ${missing[0]} by hand.`);
       }
-      if (assumedOrder) {
+      // The printout always lists the right eye first, so print order is
+      // reliable for a two-block scan and needs no warning. A lone block
+      // with an illegible header is the ambiguous case: it could be either
+      // eye, and a swap here would reach a surgical calculation.
+      const loneUnlabeledEye =
+        biometry.size === 1 && [...biometry.values()][0].sideSource === "order";
+      if (loneUnlabeledEye) {
         notes.push(
-          "The OD/OS labels weren't legible, so values were assigned in printed order (OD first). Confirm they're on the right eye.",
+          "Only one eye was on this scan and its OD/OS label wasn't legible, so it was filed as OD. Check the printout's \"Sex:… OD/OS …\" line and move the values if it's the left eye.",
         );
       }
       setScanMessage(notes.length > 0 ? notes.join(" ") : null);

@@ -78,6 +78,38 @@ ACD =2.79mn
 LENS =4.71nn
 VITR =15.49an`;
 
+/**
+ * A full two-eye A-scan printout with the values as printed on the
+ * reference photo: OD block first (AL 22.98, ACD 2.79), then OS
+ * (AL 22.65, ACD 2.59). Headers degraded the way OCR really degrades them,
+ * with OD's marker surviving as "0D" and OS's lost entirely.
+ */
+export const BIO_REAL_BOTH_EYES = `Hospita).
+EXAM: 07/23/2026 21:57
+Name :
+1D:
+Sex:Male 0D Age:25
+Cataract 10MH2 CONT
+Avg 02.79 04.71 15.49 22.98
+AVGAXL= 22 .98mn
+STDDEV =0.03mn
+ACD =2.79mn
+LENS =4.71mn
+VITR =15.49mn
+TUEL1..........1532 M/S
+Hospita).
+EXAM: 07/23/2026 21:57
+Name :
+1D:
+Sex Mae M
+Cataract 10MH2 CONT
+Avs 02.59 04.71 15.35 22.65
+AUGAXL= 22 .65mn
+STDDEU =0.06mn
+ACD =2.59mn
+LENS =4.71mn
+VITR =15.35mn`;
+
 /** Both eyes on one printout, eye headers unreadable — print order decides. */
 export const BIO_BOTH_EYES = `Hospita).
 Sex Male M

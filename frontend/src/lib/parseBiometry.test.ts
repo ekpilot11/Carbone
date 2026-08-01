@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BIO_BOTH_EYES, BIO_V1, BIO_V2, BIO_V3 } from "./ocrFixtures";
+import { BIO_BOTH_EYES, BIO_REAL_BOTH_EYES, BIO_V1, BIO_V2, BIO_V3 } from "./ocrFixtures";
 import { parseBiometryText } from "./parseBiometry";
 
 const CLEAN = `
@@ -19,6 +19,42 @@ ACD =2.59mm
 LENS =4.71mm
 VITR =15.35mm
 `;
+
+/**
+ * The clinic's stated rules for reading this printout:
+ *   1. "AVGAXL" is the axial length and "ACD" the anterior chamber depth.
+ *   2. The right eye is always printed first, the left eye second.
+ *   3. The eye can be confirmed from the "Sex:Male OD Age:25" header,
+ *      between the patient's sex and age.
+ * The values below are the ones printed on the reference photo.
+ */
+describe("parseBiometryText, the printout's documented rules", () => {
+  const readings = parseBiometryText(BIO_REAL_BOTH_EYES);
+
+  it("rule 1: reads AVGAXL as axial length and ACD as anterior chamber depth", () => {
+    expect(readings.map((r) => [r.axialLength, r.acd])).toEqual([
+      [22.98, 2.79],
+      [22.65, 2.59],
+    ]);
+  });
+
+  it("rule 2: the first block is the right eye and the second the left", () => {
+    expect(readings.map((r) => r.side)).toEqual(["OD", "OS"]);
+  });
+
+  it("rule 3: confirms the eye from the header when it survives OCR", () => {
+    // OD's "Sex:Male 0D Age:25" is legible here; OS's header is not, so it
+    // falls to print order — and the two agree.
+    expect(readings[0].sideSource).toBe("marker");
+    expect(readings[1].sideSource).toBe("order");
+  });
+
+  it("keeps each eye's values together rather than mixing the two blocks", () => {
+    const [od, os] = readings;
+    expect(od).toMatchObject({ side: "OD", axialLength: 22.98, acd: 2.79 });
+    expect(os).toMatchObject({ side: "OS", axialLength: 22.65, acd: 2.59 });
+  });
+});
 
 describe("parseBiometryText, clean text", () => {
   it("extracts axial length, ACD, lens thickness and vitreous depth per eye", () => {
