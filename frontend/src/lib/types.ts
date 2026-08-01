@@ -11,10 +11,10 @@ export interface KeratometryReading {
   k1: number;
   /** Measured K2 — always the higher corneal power, in diopters. */
   k2: number;
-  /** Corneal radius corresponding to K1, in mm. */
-  r1: number;
-  /** Corneal radius corresponding to K2, in mm. */
-  r2: number;
+  /** Corneal radius corresponding to K1, in mm — only on printouts that include radii. */
+  r1?: number;
+  /** Corneal radius corresponding to K2, in mm — only on printouts that include radii. */
+  r2?: number;
   /** Corneal astigmatism (K2 - K1), in diopters, as printed by the device. */
   cylinder: number;
 }

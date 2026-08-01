@@ -58,4 +58,36 @@ describe("parseTopographyText", () => {
     expect(od.k2).toBe(45.06);
     expect(od.r2).toBe(7.49);
   });
+
+  it("tolerates OCR-mangled eye markers like 'R> Slm Ks'", () => {
+    const [od] = parseTopographyText(`R> Slm Ks\n45.06( 7.49)\n44.16( 7.64)\n`);
+    expect(od.side).toBe("OD");
+    expect(od.k1).toBe(44.16);
+  });
+
+  it("parses labeled K1/K2 values laid out in OD/OE columns", () => {
+    const text = "OD    OE\nK1 43.93   K1 45.07\nK2 46.44   K2 45.85\n";
+    const [od, os] = parseTopographyText(text);
+    expect(od).toEqual({ side: "OD", k1: 43.93, k2: 46.44, cylinder: 2.51 });
+    expect(os).toEqual({ side: "OS", k1: 45.07, k2: 45.85, cylinder: 0.78 });
+  });
+
+  it("parses labeled K1/K2 values in stacked OD then OE sections", () => {
+    const text = "OD\nK1 43.93\nK2 46.44\nOE\nK1 45.07\nK2 45.85\n";
+    const [od, os] = parseTopographyText(text);
+    expect(od.side).toBe("OD");
+    expect(od.k1).toBe(43.93);
+    expect(os.side).toBe("OS");
+    expect(os.k2).toBe(45.85);
+  });
+
+  it("orders labeled K values so K1 is the lower even if written the other way", () => {
+    const text = "OD\nK1 46.44\nK2 43.93\n";
+    const [od] = parseTopographyText(text);
+    expect(od).toEqual({ side: "OD", k1: 43.93, k2: 46.44, cylinder: 2.51 });
+  });
+
+  it("refuses a single labeled pair when no eye is named", () => {
+    expect(parseTopographyText("K1 43.93\nK2 46.44\n")).toEqual([]);
+  });
 });

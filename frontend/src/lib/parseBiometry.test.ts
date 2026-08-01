@@ -76,4 +76,12 @@ describe("parseBiometryText", () => {
   it("returns an empty array for unrecognized text", () => {
     expect(parseBiometryText("not a biometry printout")).toEqual([]);
   });
+
+  it("tolerates OCR confusions: V read as U, = read as :, missing mm suffix", () => {
+    const noisy = "Sex:Male OD Age:68\nAUGAXL: 22.22\nACD :2.77mm\nLENS =4.45mm\nVITR =15.00mm\n";
+    const [od] = parseBiometryText(noisy);
+    expect(od.side).toBe("OD");
+    expect(od.axialLength).toBe(22.22);
+    expect(od.acd).toBe(2.77);
+  });
 });

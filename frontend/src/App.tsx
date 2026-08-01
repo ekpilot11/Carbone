@@ -36,39 +36,65 @@ function App() {
     biometry: false,
   });
   const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const [failedOcrText, setFailedOcrText] = useState<string | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [result, setResult] = useState<CalculateResponse | null>(null);
   const [calcError, setCalcError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Several passes over the same photo: preprocessing (upscale + binarize)
+  // with a layout hint first, then progressively more permissive settings.
+  const OCR_ATTEMPTS = [
+    { preprocess: true, psm: "block" },
+    { preprocess: true, psm: "auto" },
+    { preprocess: false, psm: "auto" },
+  ] as const;
+
   async function handleScan(kind: ScanKind, blob: Blob) {
     setScanMessage(null);
+    setFailedOcrText(null);
     setPreviews((prev) => ({ ...prev, [kind]: URL.createObjectURL(blob) }));
     setOcrBusy((prev) => ({ ...prev, [kind]: true }));
     try {
-      const text = await recognizeText(blob);
-      if (kind === "topography") {
-        const readings = parseTopographyText(text);
-        if (readings.length === 0) {
-          setScanMessage("Couldn't find K readings in that photo. Check focus/lighting, or enter the values by hand below.");
+      let applied = false;
+      let bestText = "";
+
+      for (const attempt of OCR_ATTEMPTS) {
+        const text = await recognizeText(blob, attempt);
+        if (text.trim().length > bestText.trim().length) bestText = text;
+
+        if (kind === "topography") {
+          const readings = parseTopographyText(text);
+          if (readings.length > 0) {
+            setRows((prev) => {
+              const next = { ...prev };
+              for (const reading of readings) next[reading.side] = applyKeratometry(next[reading.side], reading);
+              return next;
+            });
+            applied = true;
+            break;
+          }
         } else {
-          setRows((prev) => {
-            const next = { ...prev };
-            for (const reading of readings) next[reading.side] = applyKeratometry(next[reading.side], reading);
-            return next;
-          });
+          const readings = parseBiometryText(text);
+          if (readings.length > 0) {
+            setRows((prev) => {
+              const next = { ...prev };
+              for (const reading of readings) next[reading.side] = applyBiometry(next[reading.side], reading);
+              return next;
+            });
+            applied = true;
+            break;
+          }
         }
-      } else {
-        const readings = parseBiometryText(text);
-        if (readings.length === 0) {
-          setScanMessage("Couldn't find AL/ACD readings in that photo. Check focus/lighting, or enter the values by hand below.");
-        } else {
-          setRows((prev) => {
-            const next = { ...prev };
-            for (const reading of readings) next[reading.side] = applyBiometry(next[reading.side], reading);
-            return next;
-          });
-        }
+      }
+
+      if (!applied) {
+        setScanMessage(
+          kind === "topography"
+            ? "Couldn't find K readings in that photo. Get closer so the numbers fill the frame, keep it flat and well-lit — and note that handwriting usually can't be read; printed values work best."
+            : "Couldn't find AL/ACD readings in that photo. Get closer so the printout fills the frame, keep it flat and well-lit, then retake.",
+        );
+        setFailedOcrText(bestText.trim() || "(nothing readable)");
       }
     } catch {
       setScanMessage("OCR failed on that photo. You can retake it or enter values by hand below.");
@@ -132,14 +158,14 @@ function App() {
       <section className="scans">
         <CameraCapture
           label="1. Corneal topography / K readings"
-          hint="Photograph the keratometer strip showing <R>/<L> Sim K's readings."
+          hint="Photograph the printed Sim K's strip (or printed K1/K2 values) so the numbers fill the frame — close, flat, well-lit. Handwriting usually can't be read."
           onCapture={(blob) => handleScan("topography", blob)}
           previewUrl={previews.topography}
           busy={ocrBusy.topography}
         />
         <CameraCapture
           label="2. Biometry (AL / ACD)"
-          hint="Photograph the A-scan printout showing AVGAXL, ACD, LENS, VITR."
+          hint="Photograph the A-scan printout (AVGAXL, ACD, LENS, VITR) so it fills the frame — close, flat, well-lit."
           onCapture={(blob) => handleScan("biometry", blob)}
           previewUrl={previews.biometry}
           busy={ocrBusy.biometry}
@@ -147,6 +173,12 @@ function App() {
       </section>
 
       {scanMessage && <p className="scan-message">{scanMessage}</p>}
+      {failedOcrText && (
+        <details className="raw-details">
+          <summary>Show what the scanner could read</summary>
+          <pre>{failedOcrText}</pre>
+        </details>
+      )}
 
       <section className="review">
         <h2>3. Review &amp; complete</h2>
