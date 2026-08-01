@@ -13,6 +13,41 @@ dk 0.90( 0.15)
 dk 0.97( 0.17)
 `;
 
+/**
+ * The clinic's stated rules for reading this strip:
+ *   1. "<R>" marks the right eye (OD), "<L>" the left eye (OS).
+ *   2. The two values directly below a marker are that eye's K readings.
+ *   3. The lower of the two is always K1.
+ * The values below are the ones printed on the reference photo.
+ */
+describe("parseTopographyText, the strip's documented rules", () => {
+  const [od, os] = parseTopographyText(CLEAN);
+
+  it("rule 1: <R> is the right eye and <L> is the left eye", () => {
+    expect(od.side).toBe("OD");
+    expect(os.side).toBe("OS");
+  });
+
+  it("rule 2: the two values below each marker are that eye's K readings", () => {
+    expect([od.k1, od.k2].sort()).toEqual([44.16, 45.06]);
+    expect([os.k1, os.k2].sort()).toEqual([43.04, 44.01]);
+  });
+
+  it("rule 3: the lower value is always K1", () => {
+    expect(od.k1).toBeLessThan(od.k2);
+    expect(os.k1).toBeLessThan(os.k2);
+    expect(od.k1).toBe(44.16);
+    expect(os.k1).toBe(43.04);
+  });
+
+  it("the radii and dk printed alongside are not mistaken for K values", () => {
+    for (const reading of [od, os]) {
+      expect([reading.k1, reading.k2]).not.toContain(7.49);
+      expect([reading.k1, reading.k2]).not.toContain(0.9);
+    }
+  });
+});
+
 describe("parseTopographyText, clean text", () => {
   it("extracts K1/K2 for both eyes, K1 always the lower value", () => {
     const [od, os] = parseTopographyText(CLEAN);
