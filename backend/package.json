@@ -9,7 +9,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "inspect": "tsx scripts/inspectBarrett.ts",
-    "postinstall": "playwright install chromium"
+    "postinstall": "playwright install chromium",
+    "mock": "tsx scripts/mockCalculator.ts"
   },
   "keywords": [],
   "author": "",

@@ -1,6 +1,6 @@
 import cors from "cors";
 import express from "express";
-import { fetchLensOptions, runBarrettCalculation } from "./barrett.js";
+import { closeSharedBrowser, fetchLensOptions, runBarrettCalculation } from "./barrett.js";
 import { scanImage, visionConfigured } from "./scan.js";
 import type { CalculateRequest } from "./types.js";
 import { validateCalculateRequest } from "./validate.js";
@@ -84,6 +84,13 @@ app.get("/api/lenses", async (_req, res) => {
 app.get("/healthz", (_req, res) => {
   res.json({ ok: true, visionScanning: visionConfigured() });
 });
+
+// Runs share one Chromium process; hand it back rather than orphaning it.
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => {
+    void closeSharedBrowser().finally(() => process.exit(0));
+  });
+}
 
 const port = Number(process.env.PORT) || 4000;
 app.listen(port, () => {

@@ -1,10 +1,16 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { chromium, type Frame, type Locator, type Page } from "playwright";
+import { chromium, type Browser, type BrowserContext, type Frame, type Locator, type Page } from "playwright";
 import { DEFAULT_K_INDEX, K_INDEX_OPTIONS, PERSONAL_CONSTANT } from "./constants.js";
 import type { CalculateRequest, CalculateResponse, EyeInput, IolTableRow } from "./types.js";
 
-export const CALCULATOR_URL = "https://calc.apacrs.org/barrett_universal2105/";
+/**
+ * Overridable only so the automation can be exercised against a local
+ * stand-in for the site (see scripts/mockCalculator.ts) — every real run
+ * uses the official calculator.
+ */
+export const CALCULATOR_URL =
+  process.env.BARRETT_URL ?? "https://calc.apacrs.org/barrett_universal2105/";
 
 /**
  * Field labels transcribed from screenshots of the live calculator
@@ -86,6 +92,18 @@ const FORM_ANCHOR = "Axial Length";
  */
 const RESULTS_ANCHOR = /IOL Power/i;
 
+/**
+ * The site's own "the results are ready" tell: the control reading "Enter
+ * Data and Calculate" becomes "View Formula" once the calculation is done.
+ */
+const CALCULATION_DONE_ANCHOR = /view\s+formula/i;
+
+/** The tab the results are rendered on. */
+const RESULTS_TAB_ANCHOR = "Universal Formula";
+
+/** How often the page is re-checked while waiting for it to catch up. */
+const POLL_INTERVAL_MS = 120;
+
 const PATIENT_NAME_LABELS = ["Patient Name"] as const;
 const IDENTITY_PLACEHOLDER = "-";
 
@@ -160,7 +178,7 @@ async function findFormRoot(page: Page, timeoutMs: number): Promise<SearchRoot |
         .catch(() => {});
     }
 
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(POLL_INTERVAL_MS);
   }
   return null;
 }
@@ -249,9 +267,16 @@ async function fillEye(
     attempts.push(["wtw", String(eye.biometry.wtw)]);
   }
 
+  // Locating is read-only and by far the chatty part (several round trips
+  // per field), so all of it happens at once; the fills themselves stay in
+  // order, since typing into this form can trigger the page's own handlers.
+  const controls = await Promise.all(
+    attempts.map(([field]) => locateByLabelText(root, PER_EYE_FIELDS[field], eyeIndex)),
+  );
+
   const missing: string[] = [];
-  for (const [field, value] of attempts) {
-    const control = await locateByLabelText(root, PER_EYE_FIELDS[field], eyeIndex);
+  for (const [i, [field, value]] of attempts.entries()) {
+    const control = controls[i];
     if (control) {
       await setLocatorValue(control, value);
       filled.push({ field: `${eye.side} ${field}`, locator: control, expected: value });
@@ -392,6 +417,12 @@ async function selectLens(root: SearchRoot, lens: string): Promise<string> {
     );
   }
 
+  // Re-selecting what is already selected still fires the page's change
+  // handler (and its postback), so the common case — the site loads on
+  // "Personal Constant", which is also our default — skips both.
+  const current = await select.inputValue().catch(() => null);
+  if (current === match.value) return match.text.trim();
+
   await select.selectOption(match.value);
   // Selecting a lens makes the page write that lens's constants into the
   // Lens Factor / A Constant boxes, sometimes via a postback — let that
@@ -401,6 +432,28 @@ async function selectLens(root: SearchRoot, lens: string): Promise<string> {
     .waitForLoadState("networkidle", { timeout: 5000 })
     .catch(() => {});
   return match.text.trim();
+}
+
+/**
+ * Launching Chromium costs the better part of a second, so headless runs
+ * share one process; each run still gets a fresh context, so no form state
+ * or cookie survives from the previous patient. A visible (challenge)
+ * window is always its own process, and a crashed browser is relaunched.
+ */
+let sharedBrowser: Browser | null = null;
+
+async function openBrowser(headless: boolean): Promise<{ browser: Browser; shared: boolean }> {
+  if (!headless) return { browser: await chromium.launch({ headless: false }), shared: false };
+  if (sharedBrowser?.isConnected()) return { browser: sharedBrowser, shared: true };
+  sharedBrowser = await chromium.launch({ headless: true });
+  return { browser: sharedBrowser, shared: true };
+}
+
+/** Lets the server hand the shared Chromium back on shutdown. */
+export async function closeSharedBrowser(): Promise<void> {
+  const browser = sharedBrowser;
+  sharedBrowser = null;
+  await browser?.close().catch(() => {});
 }
 
 let cachedLensOptions: string[] | null = null;
@@ -415,9 +468,11 @@ let cachedLensOptions: string[] | null = null;
 export async function fetchLensOptions(): Promise<string[]> {
   if (cachedLensOptions) return cachedLensOptions;
 
-  const browser = await chromium.launch({ headless: true });
+  const { browser, shared } = await openBrowser(true);
+  let context: BrowserContext | null = null;
   try {
-    const page = await browser.newPage();
+    context = await browser.newContext();
+    const page = await context.newPage();
     await page.goto(CALCULATOR_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
     const root = await findFormRoot(page, 15000);
     if (!root) {
@@ -435,7 +490,8 @@ export async function fetchLensOptions(): Promise<string[]> {
     cachedLensOptions = options;
     return options;
   } finally {
-    await browser.close();
+    await context?.close().catch(() => {});
+    if (!shared) await browser.close().catch(() => {});
   }
 }
 
@@ -501,24 +557,36 @@ async function locateConstantInput(
   range: { min: number; max: number },
 ): Promise<Locator | null> {
   const labelled = await locateByLabelText(root, labels, 0);
-  if (labelled) {
-    const current = (await labelled.inputValue().catch(() => "")).trim();
-    // An empty box is unclaimed — nothing contradicts the label there.
-    if (current === "" || inConstantRange(current, range)) return labelled;
-  }
 
+  // Candidates, nearest-label-first: the label-anchored control, then the
+  // handful of inputs that follow each label in document order. The
+  // label-anchored one can be wrong when the label text sits in an ancestor
+  // of the box (then "the next input" is the one *after* the whole block),
+  // which is why the value decides between them.
+  const candidates: Locator[] = labelled ? [labelled] : [];
   for (const label of labels) {
     const anchors = root.getByText(label, { exact: false });
-    if ((await anchors.count()) === 0) continue;
-    const following = anchors
-      .first()
-      .locator("xpath=following::input[not(@type='hidden')]");
-    const count = Math.min(await following.count(), 4);
-    for (let i = 0; i < count; i++) {
-      const candidate = following.nth(i);
-      const value = (await candidate.inputValue().catch(() => "")).trim();
-      if (inConstantRange(value, range)) return candidate;
+    if ((await anchors.count().catch(() => 0)) === 0) continue;
+    const anchor = anchors.first();
+    // Both axes are needed: XPath's following:: skips descendants, so a
+    // label matched on a container that *wraps* the boxes would otherwise
+    // offer only the inputs after the whole block.
+    for (const axis of ["descendant", "following"]) {
+      const inputs = anchor.locator(`xpath=${axis}::input[not(@type='hidden')]`);
+      const count = Math.min(await inputs.count().catch(() => 0), 4);
+      for (let i = 0; i < count; i++) candidates.push(inputs.nth(i));
     }
+  }
+
+  // A box already holding a value of this kind identifies itself; that beats
+  // any label heuristic. Only if nothing does is an empty box accepted.
+  for (const candidate of candidates) {
+    const value = (await candidate.inputValue().catch(() => "")).trim();
+    if (inConstantRange(value, range)) return candidate;
+  }
+  for (const candidate of candidates) {
+    const value = (await candidate.inputValue().catch(() => "")).trim();
+    if (value === "") return candidate;
   }
   return labelled;
 }
@@ -579,9 +647,13 @@ async function fillPatientPlaceholder(root: SearchRoot, filled: FilledEntry[]): 
  * landing in the wrong boxes (or being wiped by the page's own scripts).
  */
 async function verifyFills(filled: FilledEntry[]): Promise<string[]> {
+  const actuals = await Promise.all(
+    filled.map((entry) => entry.locator.inputValue().catch(() => "(unreadable)")),
+  );
+
   const mismatches: string[] = [];
-  for (const entry of filled) {
-    const actual = await entry.locator.inputValue().catch(() => "(unreadable)");
+  for (const [i, entry] of filled.entries()) {
+    const actual = actuals[i];
     const same =
       actual === entry.expected ||
       (Number.isFinite(Number(actual)) && Number(actual) === Number(entry.expected)) ||
@@ -626,14 +698,43 @@ async function resultsReady(root: SearchRoot): Promise<boolean> {
 /** Polls the page and every frame until populated results appear. */
 async function findResultsRoot(page: Page, timeoutMs: number): Promise<SearchRoot | null> {
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
+  do {
     const roots: SearchRoot[] = [page, ...page.frames()];
     for (const root of roots) {
       if (await resultsReady(root)) return root;
     }
-    await page.waitForTimeout(500);
-  }
+    await page.waitForTimeout(POLL_INTERVAL_MS);
+  } while (Date.now() < deadline);
   return null;
+}
+
+async function hasText(page: Page, pattern: RegExp): Promise<boolean> {
+  for (const root of [page, ...page.frames()]) {
+    const count = await root
+      .getByText(pattern)
+      .count()
+      .catch(() => 0);
+    if (count > 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Waits for the calculation itself to finish.
+ *
+ * The site flips its "Enter Data and Calculate" control to "View Formula"
+ * the moment the results exist — an exact signal, where waiting for the
+ * network to fall idle just burned its whole timeout on a page that never
+ * goes quiet. Returns false if the signal never appears, so the caller can
+ * fall back to polling for the results themselves.
+ */
+async function waitForCalculationDone(page: Page, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    if (await hasText(page, CALCULATION_DONE_ANCHOR)) return true;
+    await page.waitForTimeout(POLL_INTERVAL_MS);
+  } while (Date.now() < deadline);
+  return false;
 }
 
 interface ExtractedResults {
@@ -779,9 +880,13 @@ async function attemptCalculation(
   request: CalculateRequest,
   headless: boolean,
 ): Promise<CalculateResponse> {
-  const browser = await chromium.launch({ headless });
+  const { browser, shared } = await openBrowser(headless);
+  let context: BrowserContext | null = null;
   try {
-    const page = await browser.newPage();
+    // A fresh context per run: a value left in a field we don't fill must
+    // never carry over from the previous patient.
+    context = await browser.newContext();
+    const page = await context.newPage();
 
     // Old ASP.NET validators often report problems via alert() popups that
     // never appear in the DOM — capture them so failures can name the reason.
@@ -884,18 +989,34 @@ async function attemptCalculation(
         : undefined;
     const warning = [kIndexWarning, constantsWarning].filter(Boolean).join(" ") || undefined;
 
-    await clickCalculate(formRoot);
-    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    // Only trust the "View Formula" signal if it isn't already showing —
+    // otherwise a page that always carries that text would look "done"
+    // before Calculate had run at all.
+    const doneSignalUsable = !(await hasText(page, CALCULATION_DONE_ANCHOR));
 
-    // Results might have been computed but left on an inactive tab.
-    let resultsRoot = await findResultsRoot(page, 10000);
-    if (!resultsRoot) {
-      await page
-        .getByText("Universal Formula", { exact: false })
+    await clickCalculate(formRoot);
+    const calculationDone = doneSignalUsable && (await waitForCalculationDone(page, 30000));
+
+    // The results live on the "Universal Formula" tab. Once the site says
+    // it has finished, switch straight there rather than polling the form
+    // tab for results that were never going to appear on it.
+    const switchTab = () =>
+      page
+        .getByText(RESULTS_TAB_ANCHOR, { exact: false })
         .first()
         .click({ timeout: 3000 })
         .catch(() => {});
-      resultsRoot = await findResultsRoot(page, 6000);
+
+    let resultsRoot: SearchRoot | null = null;
+    if (calculationDone) {
+      await switchTab();
+      resultsRoot = await findResultsRoot(page, 8000);
+    } else {
+      resultsRoot = await findResultsRoot(page, 8000);
+      if (!resultsRoot) {
+        await switchTab();
+        resultsRoot = await findResultsRoot(page, 6000);
+      }
     }
 
     if (!resultsRoot) {
@@ -925,6 +1046,7 @@ async function attemptCalculation(
       warning,
     };
   } finally {
-    await browser.close();
+    await context?.close().catch(() => {});
+    if (!shared) await browser.close().catch(() => {});
   }
 }

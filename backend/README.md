@@ -85,6 +85,51 @@ changes and runs start failing, re-verify with the steps below:
 5. Run an end-to-end request against the real site and confirm the
    response's tables match a manual run with the same inputs.
 
+## Speed — what a run waits on
+
+A run used to take ~12s against a stand-in site whose calculation itself
+takes 0.8s; it now takes ~5.9s cold and ~2.7s once the browser is warm.
+Almost all of the difference was time spent waiting for nothing:
+
+- **The readiness signal.** After Calculate the code waited for the network
+  to fall idle (up to 15s), then polled the *form* tab for results that only
+  ever render on the "Universal Formula" tab — burning that timeout too
+  before finally switching tabs. It now watches for the site's own tell:
+  "Enter Data and Calculate" becomes **"View Formula"** the moment the
+  results exist. As soon as that appears it switches tabs and reads them.
+  The signal is only trusted if it wasn't already showing before Calculate
+  was clicked; otherwise the old poll-for-results path still applies.
+- **One browser, many runs.** Chromium is launched once and reused, which is
+  most of the cold/warm difference. Every run still gets a **fresh context**,
+  so no cookie or leftover field value can carry from one patient to the
+  next. A visible (Cloudflare) window is always its own process, and the
+  shared one is closed on SIGINT/SIGTERM.
+- **No redundant postback.** Selecting the lens is skipped when the dropdown
+  already shows it — the common case, since both it and the site default to
+  "Personal Constant" — which also skips waiting for the page to settle.
+- **Concurrent lookups.** Locating a field costs several round trips to the
+  browser; all the lookups for an eye now happen at once, and every filled
+  value is read back at once. The fills themselves stay ordered, since
+  typing can trigger the page's own handlers.
+- Polling intervals went from 500ms to 120ms.
+
+## Exercising it offline (`npm run mock`)
+
+`scripts/mockCalculator.ts` serves a stand-in for the calculator: the same
+field labels and table layout, the tabbed results, the linked Lens
+Factor/A Constant pair, the K-index radios, and the "View Formula" switch
+after a simulated delay. It exists to test the automation without touching
+the live site (and from machines that can't reach it).
+
+```bash
+npm run mock                      # serves http://127.0.0.1:4100/
+BARRETT_URL=http://127.0.0.1:4100/ npm run dev
+```
+
+`BARRETT_URL` exists for this; leave it unset and every run goes to the
+official calculator. **The mock's IOL powers are invented** — it proves the
+plumbing, never the arithmetic.
+
 ## Running
 
 ```bash
