@@ -97,11 +97,16 @@ programmatic access rather than working around their protection.
 - After filling, every value is read back and compared; if anything landed
   in the wrong box the run aborts *before* clicking Calculate — a wrong box
   means a wrong surgical calculation.
-- If Calculate yields no results, Patient Name gets a neutral "-"
-  placeholder (never real patient data) and Calculate is clicked once
-  more; Doctor Name / Patient ID stay blank (they were blank on the
-  successful manual run). alert()-style validator popups are captured and
-  included in error messages.
+- Patient Name is always filled with a neutral "-" placeholder (never
+  real patient data): the site requires it before rendering the
+  "Recommended IOL" summary line. Doctor Name / Patient ID stay blank
+  (they were blank on the successful manual run). alert()-style validator
+  popups are captured and included in error messages.
+- Success is detected by the populated "IOL Power | Optic | Refraction"
+  results tables (a verified live run showed these render even when the
+  "Recommended IOL" summary is absent); the summary values are parsed
+  into `recommended` when present, OD's line before OS's in document
+  order.
 - On failure, a full-page screenshot + HTML dump land in
   `backend/diagnostics/` (gitignored; contains the entered clinical
   numbers, never PHI) — the error message names the exact files.

@@ -16,10 +16,10 @@ export const CALCULATOR_URL = "https://calc.apacrs.org/barrett_universal2105/";
  * "Lens Factor ... or A Constant" — they are alternatives, so only Lens
  * Factor is filled; the user's verified manual run shows the site pairing
  * Lens Factor 1.57 with A Constant 118.4, so the derived value matches
- * this practice's constants. Doctor Name and Patient ID are left blank
- * (they were blank on the successful manual run); Patient Name gets a
- * neutral "-" placeholder only if a first Calculate attempt yields no
- * results — never real patient data.
+ * this practice's constants. Patient Name is required by the site before
+ * it will render the "Recommended IOL" summary, so it is always filled
+ * with a neutral "-" placeholder — never real patient data. Doctor Name
+ * and Patient ID stay blank (they were blank on the successful manual run).
  */
 const PER_EYE_FIELDS = {
   axialLength: ["Axial Length"],
@@ -35,10 +35,15 @@ const LENS_FACTOR_LABELS = ["Lens Factor"] as const;
 /** Label text that must exist wherever the form actually renders. */
 const FORM_ANCHOR = "Axial Length";
 
-/** Text that only appears once the calculation has actually run. */
-const RESULTS_ANCHOR = /Recommended IOL/i;
+/**
+ * Text that only appears once the calculation has actually run. A verified
+ * live run showed the results view carries "IOL Power | Optic | Refraction"
+ * tables even when the "Recommended IOL" summary line is absent (that line
+ * only renders when Patient Name is filled), so the tables are the anchor.
+ */
+const RESULTS_ANCHOR = /IOL Power/i;
 
-const IDENTITY_FIELDS: readonly (readonly string[])[] = [["Patient Name"]];
+const PATIENT_NAME_LABELS = ["Patient Name"] as const;
 const IDENTITY_PLACEHOLDER = "-";
 
 /** Where failure screenshots/HTML dumps land; contains clinical numbers only, never PHI. */
@@ -218,6 +223,17 @@ async function fillLensFactor(
   return [];
 }
 
+async function fillPatientPlaceholder(root: SearchRoot, filled: FilledEntry[]): Promise<string[]> {
+  // The site requires a non-empty Patient Name before it renders the
+  // "Recommended IOL" summary. A neutral placeholder goes in — never real
+  // patient data.
+  const control = await locateByLabelText(root, PATIENT_NAME_LABELS, 0);
+  if (!control) return ["patientName"];
+  await setLocatorValue(control, IDENTITY_PLACEHOLDER);
+  filled.push({ field: "patientName", locator: control, expected: IDENTITY_PLACEHOLDER });
+  return [];
+}
+
 /**
  * Reads every filled control back and reports any whose value differs
  * numerically from what was written — the guard against values silently
@@ -247,27 +263,31 @@ async function clickCalculate(root: SearchRoot): Promise<void> {
   await root.locator('input[type="submit"][value*="alculate"], input[type="button"][value*="alculate"]').first().click();
 }
 
-/** Fills identity fields with a neutral placeholder; missing ones are skipped silently. */
-async function fillIdentityPlaceholders(root: SearchRoot): Promise<void> {
-  for (const labels of IDENTITY_FIELDS) {
-    const control = await locateByLabelText(root, labels, 0);
-    if (control) {
-      await setLocatorValue(control, IDENTITY_PLACEHOLDER).catch(() => {});
-    }
-  }
+/**
+ * True when the root shows the results tables with actual numbers in them —
+ * bare "IOL Power" headers on an empty results view don't count.
+ */
+async function resultsReady(root: SearchRoot): Promise<boolean> {
+  const count = await root
+    .getByText(RESULTS_ANCHOR)
+    .count()
+    .catch(() => 0);
+  if (count === 0) return false;
+  const body = await root
+    .locator("body")
+    .innerText({ timeout: 3000 })
+    .catch(() => "");
+  const start = body.search(RESULTS_ANCHOR);
+  return start >= 0 && /\d/.test(body.slice(start));
 }
 
-/** Polls the page and every frame until the results text appears. */
+/** Polls the page and every frame until populated results appear. */
 async function findResultsRoot(page: Page, timeoutMs: number): Promise<SearchRoot | null> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const roots: SearchRoot[] = [page, ...page.frames()];
     for (const root of roots) {
-      const count = await root
-        .getByText(RESULTS_ANCHOR)
-        .count()
-        .catch(() => 0);
-      if (count > 0) return root;
+      if (await resultsReady(root)) return root;
     }
     await page.waitForTimeout(500);
   }
@@ -281,30 +301,23 @@ interface ExtractedResults {
 }
 
 /**
- * The results view lays out a "Right Eye (OD)" panel then a "Left Eye (OS)"
- * panel, each containing a "Recommended IOL: <power> (<optic>) for Target
- * Refraction:<n>" line and an IOL Power / Optic / Refraction table.
+ * The results view shows an OD and an OS panel (side by side — their text
+ * can interleave in innerText order), each with an IOL Power / Optic /
+ * Refraction table and, when Patient Name was filled, a "Recommended IOL:
+ * <power> (<optic>) for Target Refraction:<n>" summary. The OD summary
+ * precedes the OS one in document order regardless of panel layout.
  */
 async function extractResults(root: SearchRoot): Promise<ExtractedResults> {
   const body = (await root.locator("body").innerText()).trim();
 
-  const odStart = body.search(/Right Eye\s*\(OD\)/i);
-  const osStart = body.search(/Left Eye\s*\(OS\)/i);
-  const text = odStart >= 0 ? body.slice(odStart) : body;
+  const eyeStart = body.search(/Right Eye\s*\(OD\)/i);
+  const tableStart = body.search(RESULTS_ANCHOR);
+  const start = eyeStart >= 0 ? eyeStart : tableStart >= 0 ? tableStart : 0;
+  const text = body.slice(start, start + 6000).trim();
 
-  const recommendedIn = (section: string): string | undefined =>
-    section.match(/Recommended IOL:\s*(-?[\d.]+)/i)?.[1];
+  const recommendations = [...body.matchAll(/Recommended IOL:\s*(-?[\d.]+)/gi)].map((m) => m[1]);
 
-  let od: string | undefined;
-  let os: string | undefined;
-  if (odStart >= 0 && osStart > odStart) {
-    od = recommendedIn(body.slice(odStart, osStart));
-    os = recommendedIn(body.slice(osStart));
-  } else {
-    od = recommendedIn(text);
-  }
-
-  return { text: text.slice(0, 6000), od, os };
+  return { text, od: recommendations[0], os: recommendations[1] };
 }
 
 const UNVERIFIED_WARNING =
@@ -380,6 +393,7 @@ export async function runBarrettCalculation(request: CalculateRequest): Promise<
 
     const filled: FilledEntry[] = [];
     const missing = [
+      ...(await fillPatientPlaceholder(formRoot, filled)),
       ...(await fillLensFactor(formRoot, request, filled)),
       ...(await fillEye(formRoot, request.od, 0, filled)),
       ...(await fillEye(formRoot, request.os, 1, filled)),
@@ -409,32 +423,14 @@ export async function runBarrettCalculation(request: CalculateRequest): Promise<
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
 
     // Results might have been computed but left on an inactive tab.
-    let resultsRoot = await findResultsRoot(page, 8000);
+    let resultsRoot = await findResultsRoot(page, 10000);
     if (!resultsRoot) {
       await page
         .getByText("Universal Formula", { exact: false })
         .first()
         .click({ timeout: 3000 })
         .catch(() => {});
-      resultsRoot = await findResultsRoot(page, 4000);
-    }
-
-    // If still nothing, the site may want a non-empty patient name — fill a
-    // neutral placeholder (never real patient data) and try once more.
-    if (!resultsRoot) {
-      const retryRoot = (await findFormRoot(page, 3000)) ?? formRoot;
-      await fillIdentityPlaceholders(retryRoot);
-      await clickCalculate(retryRoot);
-      await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
-      resultsRoot = await findResultsRoot(page, 8000);
-      if (!resultsRoot) {
-        await page
-          .getByText("Universal Formula", { exact: false })
-          .first()
-          .click({ timeout: 3000 })
-          .catch(() => {});
-        resultsRoot = await findResultsRoot(page, 4000);
-      }
+      resultsRoot = await findResultsRoot(page, 6000);
     }
 
     if (!resultsRoot) {
