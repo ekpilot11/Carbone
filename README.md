@@ -88,11 +88,16 @@ never read from a photo — and start on this practice's own values (1.57 and
   boxes then show that lens's values for reference and stop accepting edits;
   switch back to "Personal Constant" to type constants again.
 
-No manufacturer constants are used for the calculation itself — the values
-this app shows for a named lens are mirrored for display only, so an entry
-that goes out of date is a wrong number on screen, never a wrong
-calculation. Whichever constants the site actually held are read back off
-the page and reported with the results and on the PDF. The two are linked on
+All 37 lenses in the calculator's dropdown have their constants mirrored
+here (`frontend/src/lib/lenses.ts`, transcribed from the site's own list).
+None of them are used for the calculation itself — they are shown so the
+form matches what the site will apply, so an entry that goes out of date is
+a wrong number on screen, never a wrong calculation. A unit test checks
+every pair against the line the site's own values follow
+(A = 118.4 + (LF − 1.57) × 1.9195), which catches a mistyped digit.
+
+Whichever constants the site actually held are read back off the page and
+reported with the results and on the PDF. The two are linked on
 the site (it derives one from the other), so if it rewrites what was typed,
 the results say so.
 
