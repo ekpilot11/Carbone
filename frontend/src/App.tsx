@@ -165,6 +165,13 @@ function App() {
           Open calculator manually
         </a>
         {!bothComplete && <p className="hint">Fill in every field for both eyes to enable calculation.</p>}
+        {calculating && (
+          <p className="hint">
+            A browser window opens on the computer running the backend. If it shows a security
+            check ("Verify you are human"), click it — the calculation continues automatically once
+            the calculator loads.
+          </p>
+        )}
       </section>
 
       {calcError && (

@@ -311,13 +311,35 @@ const UNVERIFIED_WARNING =
   "Field mapping was matched to a screenshot of the calculator but has not been verified " +
   "with a real end-to-end submission. Confirm every number against calc.apacrs.org before clinical use.";
 
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+/**
+ * calc.apacrs.org sits behind Cloudflare bot protection (confirmed by an
+ * inspect run that received the "Just a moment..." Turnstile challenge).
+ * This automation deliberately does NOT try to evade that protection.
+ * Instead it runs a visible browser window by default: when Cloudflare
+ * shows its verification, the clinician completes it by hand — a real
+ * human, present at the machine — and the automation carries on filling
+ * the form once the calculator appears. Set BARRETT_HEADLESS=1 to force
+ * the old invisible mode (it will fail whenever Cloudflare challenges).
+ */
+const HEADLESS = process.env.BARRETT_HEADLESS === "1";
+
+/** How long the clinician gets to complete Cloudflare's check in the visible window. */
+const CHALLENGE_WAIT_MS = 180000;
+
+async function isChallengePage(page: Page): Promise<boolean> {
+  const title = await page.title().catch(() => "");
+  if (/just a moment/i.test(title)) return true;
+  const text = await page
+    .locator("body")
+    .innerText({ timeout: 2000 })
+    .catch(() => "");
+  return /performing security verification|verify you are not a bot|cloudflare/i.test(text);
+}
 
 export async function runBarrettCalculation(request: CalculateRequest): Promise<CalculateResponse> {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: HEADLESS });
   try {
-    const page = await browser.newPage({ userAgent: USER_AGENT });
+    const page = await browser.newPage();
 
     // Old ASP.NET validators often report problems via alert() popups that
     // never appear in the DOM — capture them so failures can name the reason.
@@ -329,13 +351,30 @@ export async function runBarrettCalculation(request: CalculateRequest): Promise<
 
     await page.goto(CALCULATOR_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
 
-    const formRoot = await findFormRoot(page, 15000);
+    let formRoot = await findFormRoot(page, 15000);
+    if (!formRoot && (await isChallengePage(page))) {
+      if (HEADLESS) {
+        throw new Error(
+          `calc.apacrs.org is showing its Cloudflare security check, which an invisible browser ` +
+            `cannot pass. Run the backend without BARRETT_HEADLESS so a visible browser window ` +
+            `opens and the verification can be completed by hand.`,
+        );
+      }
+      // Visible window: give the clinician time to click the verification.
+      console.log(
+        "Cloudflare is verifying the browser — if a checkbox appears in the opened window, " +
+          "click it. Waiting up to 3 minutes for the calculator to load...",
+      );
+      formRoot = await findFormRoot(page, CHALLENGE_WAIT_MS);
+    }
+
     if (!formRoot) {
       throw new Error(
         `Couldn't find the calculator form (no "${FORM_ANCHOR}" text anywhere on the page or its ` +
-          `frames). What was actually served — ${await describePage(page)}. If this text mentions ` +
-          `access denied or verification, the site may be blocking automated browsers; otherwise run ` +
-          `"npm run inspect" (backend/README.md) and update the selectors from its output.`,
+          `frames). What was actually served — ${await describePage(page)}. If this mentions ` +
+          `Cloudflare or security verification, the check wasn't completed in time — try again and ` +
+          `complete it in the browser window that opens; otherwise run "npm run inspect" ` +
+          `(backend/README.md) and update the selectors from its output.`,
       );
     }
 
@@ -369,15 +408,33 @@ export async function runBarrettCalculation(request: CalculateRequest): Promise<
     await clickCalculate(formRoot);
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
 
-    // If no results appeared, the site may want a non-empty patient name —
-    // fill a neutral placeholder (never real patient data) and try once more.
+    // Results might have been computed but left on an inactive tab.
     let resultsRoot = await findResultsRoot(page, 8000);
+    if (!resultsRoot) {
+      await page
+        .getByText("Universal Formula", { exact: false })
+        .first()
+        .click({ timeout: 3000 })
+        .catch(() => {});
+      resultsRoot = await findResultsRoot(page, 4000);
+    }
+
+    // If still nothing, the site may want a non-empty patient name — fill a
+    // neutral placeholder (never real patient data) and try once more.
     if (!resultsRoot) {
       const retryRoot = (await findFormRoot(page, 3000)) ?? formRoot;
       await fillIdentityPlaceholders(retryRoot);
       await clickCalculate(retryRoot);
       await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
       resultsRoot = await findResultsRoot(page, 8000);
+      if (!resultsRoot) {
+        await page
+          .getByText("Universal Formula", { exact: false })
+          .first()
+          .click({ timeout: 3000 })
+          .catch(() => {});
+        resultsRoot = await findResultsRoot(page, 4000);
+      }
     }
 
     if (!resultsRoot) {
