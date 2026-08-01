@@ -167,6 +167,21 @@ button.secondary,
   padding: 0 0.3rem;
 }
 
+.clear-eye {
+  align-self: flex-end;
+  background: transparent;
+  color: #5b6470;
+  border: 1px solid #ccd3db;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+  margin-top: -0.4rem;
+}
+
+.clear-eye:not(:disabled):hover {
+  color: #b3261e;
+  border-color: #b3261e;
+}
+
 .field {
   display: flex;
   flex-direction: column;

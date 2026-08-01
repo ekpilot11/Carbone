@@ -215,7 +215,10 @@ async function fillLensFactor(
   filled: FilledEntry[],
 ): Promise<string[]> {
   // Only Lens Factor — see the header comment for why A Constant stays empty.
-  const value = String(request.od.iol.lensFactor);
+  // Validation guarantees at least one eye; both carry the same fixed IOL.
+  const anyEye = request.od ?? request.os;
+  if (!anyEye) return ["lensFactor"];
+  const value = String(anyEye.iol.lensFactor);
   const control = await locateByLabelText(root, LENS_FACTOR_LABELS, 0);
   if (!control) return ["lensFactor"];
   await setLocatorValue(control, value);
@@ -324,13 +327,17 @@ function parseTableRows(section: string): IolTableRow[] {
   return rows;
 }
 
-/** Splits the results text at each table header; OD's table precedes OS's in document order. */
+/**
+ * Splits the results text at each table header; OD's table precedes OS's in
+ * document order. In a single-eye run the uncalculated side's table renders
+ * with headers but no rows, so one side may legitimately come back empty.
+ */
 function parseTables(text: string): ExtractedResults["tables"] {
   const sections = text.split(/IOL Power\s+Optic\s+Refraction/i).slice(1);
   if (sections.length < 2) return undefined;
   const od = parseTableRows(sections[0]);
   const os = parseTableRows(sections[1]);
-  if (od.length === 0 || os.length === 0) return undefined;
+  if (od.length === 0 && os.length === 0) return undefined;
   return { od, os };
 }
 
@@ -339,19 +346,42 @@ function parseTables(text: string): ExtractedResults["tables"] {
  * can interleave in innerText order), each with an IOL Power / Optic /
  * Refraction table and, when Patient Name was filled, a "Recommended IOL:
  * <power> (<optic>) for Target Refraction:<n>" summary. The OD summary
- * precedes the OS one in document order regardless of panel layout.
+ * precedes the OS one in document order — but in a single-eye run only the
+ * calculated eye's summary renders at all, so the requested sides decide
+ * which eye each match belongs to. The two tables always render (the
+ * uncalculated one just has no rows), so table position still maps to eye.
  */
-async function extractResults(root: SearchRoot): Promise<ExtractedResults> {
+async function extractResults(
+  root: SearchRoot,
+  requested: { od: boolean; os: boolean },
+): Promise<ExtractedResults> {
   const body = (await root.locator("body").innerText()).trim();
 
-  const eyeStart = body.search(/Right Eye\s*\(OD\)/i);
+  const eyeStart = body.search(/(Right|Left) Eye\s*\(O[DS]\)/i);
   const tableStart = body.search(RESULTS_ANCHOR);
   const start = eyeStart >= 0 ? eyeStart : tableStart >= 0 ? tableStart : 0;
   const text = body.slice(start, start + 6000).trim();
 
   const recommendations = [...body.matchAll(/Recommended IOL:\s*(-?[\d.]+)/gi)].map((m) => m[1]);
+  let od: string | undefined;
+  let os: string | undefined;
+  if (requested.od && requested.os) {
+    od = recommendations[0];
+    os = recommendations[1];
+  } else if (requested.od) {
+    od = recommendations[0];
+  } else {
+    os = recommendations[0];
+  }
 
-  return { text, od: recommendations[0], os: recommendations[1], tables: parseTables(body) };
+  let tables = parseTables(body);
+  // Sanity: rows must appear exactly for the calculated side(s); anything
+  // else means the layout changed, so fall back to the raw text.
+  if (tables && (requested.od !== tables.od.length > 0 || requested.os !== tables.os.length > 0)) {
+    tables = undefined;
+  }
+
+  return { text, od, os, tables };
 }
 
 /**
@@ -425,8 +455,8 @@ export async function runBarrettCalculation(request: CalculateRequest): Promise<
     const missing = [
       ...(await fillPatientPlaceholder(formRoot, filled)),
       ...(await fillLensFactor(formRoot, request, filled)),
-      ...(await fillEye(formRoot, request.od, 0, filled)),
-      ...(await fillEye(formRoot, request.os, 1, filled)),
+      ...(request.od ? await fillEye(formRoot, request.od, 0, filled) : []),
+      ...(request.os ? await fillEye(formRoot, request.os, 1, filled) : []),
     ];
 
     if (missing.length > 0) {
@@ -477,7 +507,10 @@ export async function runBarrettCalculation(request: CalculateRequest): Promise<
 
     // Verified end-to-end 2026-08-01: a live automated run returned tables
     // identical to a manual run on the official site with the same inputs.
-    const { text, od, os, tables } = await extractResults(resultsRoot);
+    const { text, od, os, tables } = await extractResults(resultsRoot, {
+      od: request.od !== undefined,
+      os: request.os !== undefined,
+    });
     return { resultsText: text, recommended: { od, os }, tables };
   } finally {
     await browser.close();

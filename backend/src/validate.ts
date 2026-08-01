@@ -35,5 +35,11 @@ function validateEye(eye: unknown, side: EyeSide): string | null {
 export function validateCalculateRequest(body: unknown): string | null {
   if (typeof body !== "object" || body === null) return "Request body must be a JSON object";
   const req = body as Partial<CalculateRequest>;
-  return validateEye(req.od, "OD") ?? validateEye(req.os, "OS");
+  if (req.od === undefined && req.os === undefined) {
+    return "Request must include at least one eye (od or os)";
+  }
+  return (
+    (req.od !== undefined ? validateEye(req.od, "OD") : null) ??
+    (req.os !== undefined ? validateEye(req.os, "OS") : null)
+  );
 }

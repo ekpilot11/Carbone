@@ -7,7 +7,8 @@ import {
   applyKeratometry,
   emptyRow,
   formatRowForClipboard,
-  isRowComplete,
+  isRowEmpty,
+  planCalculation,
   toEyeInput,
   type EyeRowState,
 } from "./lib/eyeRow";
@@ -80,14 +81,22 @@ function App() {
     setRows((prev) => ({ ...prev, [side]: { ...prev[side], [field]: value } }));
   }
 
-  const bothComplete = isRowComplete(rows.OD) && isRowComplete(rows.OS);
+  function clearEye(side: EyeSide) {
+    setRows((prev) => ({ ...prev, [side]: emptyRow(side) }));
+  }
+
+  const plan = planCalculation(rows.OD, rows.OS);
 
   async function handleCalculate() {
+    if (!plan.ok) return;
     setCalcError(null);
     setResult(null);
     setCalculating(true);
     try {
-      const response = await calculateBarrett({ od: toEyeInput(rows.OD), os: toEyeInput(rows.OS) });
+      const response = await calculateBarrett({
+        od: plan.sides.includes("OD") ? toEyeInput(rows.OD) : undefined,
+        os: plan.sides.includes("OS") ? toEyeInput(rows.OS) : undefined,
+      });
       setResult(response);
     } catch (err) {
       setCalcError(err instanceof Error ? err.message : "Calculation failed.");
@@ -97,7 +106,10 @@ function App() {
   }
 
   async function handleCopy() {
-    const text = ["OD (right eye)", formatRowForClipboard(rows.OD), "", "OS (left eye)", formatRowForClipboard(rows.OS)].join("\n");
+    const sections: string[] = [];
+    if (!isRowEmpty(rows.OD)) sections.push("OD (right eye)", formatRowForClipboard(rows.OD), "");
+    if (!isRowEmpty(rows.OS)) sections.push("OS (left eye)", formatRowForClipboard(rows.OS));
+    const text = sections.join("\n").trim() || "No values entered yet.";
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -142,21 +154,26 @@ function App() {
           Fields marked <span className="ocr-badge">OCR</span> were read from your photos — double-check
           them. The printout doesn't label which K is which, so K1 is always the lower of the two values
           (swapped automatically if entered the other way round). Refraction target defaults to 0
-          (emmetropia) — change it only when the plan differs.
+          (emmetropia) — change it only when the plan differs. To calculate a single eye, fill in only
+          that eye — use "Clear" to empty the other one.
         </p>
         <p className="fixed-iol-note">
           IOL: <strong>{IOL_MODEL}</strong> · A-Constant <strong>{A_CONSTANT}</strong> · Lens Factor{" "}
           <strong>{LENS_FACTOR}</strong> — fixed for this practice, sent with every calculation.
         </p>
         <div className="eye-forms">
-          <EyeForm row={rows.OD} title="OD (right eye)" onChange={updateField} />
-          <EyeForm row={rows.OS} title="OS (left eye)" onChange={updateField} />
+          <EyeForm row={rows.OD} title="OD (right eye)" onChange={updateField} onClear={clearEye} />
+          <EyeForm row={rows.OS} title="OS (left eye)" onChange={updateField} onClear={clearEye} />
         </div>
       </section>
 
       <section className="actions">
-        <button type="button" onClick={handleCalculate} disabled={!bothComplete || calculating}>
-          {calculating ? "Calculating…" : "Calculate with Barrett Universal II"}
+        <button type="button" onClick={handleCalculate} disabled={!plan.ok || calculating}>
+          {calculating
+            ? "Calculating…"
+            : plan.ok && plan.sides.length === 1
+              ? `Calculate ${plan.sides[0]} with Barrett Universal II`
+              : "Calculate with Barrett Universal II"}
         </button>
         <button type="button" onClick={handleCopy} className="secondary">
           {copied ? "Copied!" : "Copy values"}
@@ -164,7 +181,7 @@ function App() {
         <a href={CALCULATOR_URL} target="_blank" rel="noopener noreferrer" className="secondary link-btn">
           Open calculator manually
         </a>
-        {!bothComplete && <p className="hint">Fill in every field for both eyes to enable calculation.</p>}
+        {!plan.ok && <p className="hint">{plan.reason}</p>}
         {calculating && (
           <p className="hint">
             A browser window opens on the computer running the backend. If it shows a security
@@ -190,21 +207,29 @@ function App() {
           {result.warning && <p className="scan-message">{result.warning}</p>}
           {(result.recommended?.od || result.recommended?.os) && (
             <div className="recommended-row">
-              <div className="recommended-card">
-                <span className="recommended-label">OD — Recommended IOL</span>
-                <span className="recommended-value">{result.recommended?.od ?? "—"} D</span>
-              </div>
-              <div className="recommended-card">
-                <span className="recommended-label">OS — Recommended IOL</span>
-                <span className="recommended-value">{result.recommended?.os ?? "—"} D</span>
-              </div>
+              {result.recommended?.od && (
+                <div className="recommended-card">
+                  <span className="recommended-label">OD — Recommended IOL</span>
+                  <span className="recommended-value">{result.recommended.od} D</span>
+                </div>
+              )}
+              {result.recommended?.os && (
+                <div className="recommended-card">
+                  <span className="recommended-label">OS — Recommended IOL</span>
+                  <span className="recommended-value">{result.recommended.os} D</span>
+                </div>
+              )}
             </div>
           )}
           {result.tables ? (
             <>
               <div className="result-tables">
-                <EyeResultTable title="OD (right eye)" rows={result.tables.od} />
-                <EyeResultTable title="OS (left eye)" rows={result.tables.os} />
+                {result.tables.od.length > 0 && (
+                  <EyeResultTable title="OD (right eye)" rows={result.tables.od} />
+                )}
+                {result.tables.os.length > 0 && (
+                  <EyeResultTable title="OS (left eye)" rows={result.tables.os} />
+                )}
               </div>
               <details className="raw-details">
                 <summary>Raw calculator text</summary>
@@ -278,9 +303,10 @@ interface EyeFormProps {
   row: EyeRowState;
   title: string;
   onChange: (side: EyeSide, field: keyof EyeRowState, value: string) => void;
+  onClear: (side: EyeSide) => void;
 }
 
-function EyeForm({ row, title, onChange }: EyeFormProps) {
+function EyeForm({ row, title, onChange, onClear }: EyeFormProps) {
   const field = (key: keyof EyeRowState, label: string, unit: string, ocr: boolean) => (
     <label className="field">
       <span>
@@ -298,6 +324,14 @@ function EyeForm({ row, title, onChange }: EyeFormProps) {
   return (
     <fieldset className="eye-form">
       <legend>{title}</legend>
+      <button
+        type="button"
+        className="clear-eye"
+        onClick={() => onClear(row.side)}
+        disabled={isRowEmpty(row)}
+      >
+        Clear {row.side}
+      </button>
       {field("axialLength", "Axial Length", "mm", true)}
       {field("k1", "Measured K1", "D", true)}
       {field("k2", "Measured K2", "D", true)}

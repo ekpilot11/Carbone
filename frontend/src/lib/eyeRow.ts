@@ -50,6 +50,41 @@ export function isRowComplete(row: EyeRowState): boolean {
 }
 
 /**
+ * True when no measurement was entered for this eye. The refraction target
+ * is ignored because it defaults to "0" on purpose.
+ */
+export function isRowEmpty(row: EyeRowState): boolean {
+  return [row.k1, row.k2, row.axialLength, row.acd, row.lensThickness].every(
+    (value) => value.trim() === "",
+  );
+}
+
+export type CalculationPlan = { ok: true; sides: EyeSide[] } | { ok: false; reason: string };
+
+/**
+ * The calculator accepts a single eye, so each eye must be either fully
+ * filled in or fully empty — a half-filled eye is treated as a mistake
+ * rather than silently dropped.
+ */
+export function planCalculation(od: EyeRowState, os: EyeRowState): CalculationPlan {
+  const partial = (row: EyeRowState) => !isRowEmpty(row) && !isRowComplete(row);
+  if (partial(od)) {
+    return { ok: false, reason: "OD (right eye) is partially filled — complete it, or clear it to calculate OS alone." };
+  }
+  if (partial(os)) {
+    return { ok: false, reason: "OS (left eye) is partially filled — complete it, or clear it to calculate OD alone." };
+  }
+
+  const sides: EyeSide[] = [];
+  if (isRowComplete(od)) sides.push("OD");
+  if (isRowComplete(os)) sides.push("OS");
+  if (sides.length === 0) {
+    return { ok: false, reason: "Fill in every field for at least one eye to enable calculation." };
+  }
+  return { ok: true, sides };
+}
+
+/**
  * Applies the K1-is-lower convention even to hand-edited values: if the
  * clinician typed them the other way round, they're swapped rather than
  * sent through mislabeled.

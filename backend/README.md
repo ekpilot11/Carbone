@@ -56,8 +56,10 @@ Environment: `PORT` (default `4000`).
 
 ## Endpoints
 
-- `POST /api/calculate` — body: `{ od: EyeInput, os: EyeInput }` (see
-  `src/types.ts`). `manual` holds the one clinician-entered value (target
+- `POST /api/calculate` — body: `{ od?: EyeInput, os?: EyeInput }`, at
+  least one eye required; a single eye calculates that side only (see
+  `src/types.ts`). In single-eye runs the "Recommended IOL" match maps to
+  the requested side, and the uncalculated side's table comes back empty. `manual` holds the one clinician-entered value (target
   refraction); `iol` holds the fixed IOL design/constants from
   `src/constants.ts` (expected to be `Biconvex` / `118.4` / `1.57` for this
   practice, but still validated per-request rather than hardcoded

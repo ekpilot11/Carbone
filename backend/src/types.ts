@@ -23,9 +23,10 @@ export interface EyeInput {
   };
 }
 
+/** At least one eye must be present; a single eye calculates that side only. */
 export interface CalculateRequest {
-  od: EyeInput;
-  os: EyeInput;
+  od?: EyeInput;
+  os?: EyeInput;
 }
 
 export interface IolTableRow {
