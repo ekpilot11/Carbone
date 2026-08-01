@@ -15,8 +15,8 @@ import {
 import { A_CONSTANT, IOL_MODEL, LENS_FACTOR } from "./lib/constants";
 import { parseBiometryText } from "./lib/parseBiometry";
 import { parseTopographyText } from "./lib/parseTopography";
-import { recognizeText } from "./lib/ocr";
-import type { EyeSide } from "./lib/types";
+import { recognizeVariants } from "./lib/ocr";
+import type { BiometryReading, EyeSide, KeratometryReading } from "./lib/types";
 
 const CALCULATOR_URL = "https://calc.apacrs.org/barrett_universal2105/";
 
@@ -42,62 +42,72 @@ function App() {
   const [calcError, setCalcError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Several passes over the same photo: preprocessing (upscale + binarize)
-  // with a layout hint first, then progressively more permissive settings.
-  const OCR_ATTEMPTS = [
-    { preprocess: true, psm: "block" },
-    { preprocess: true, psm: "auto" },
-    { preprocess: false, psm: "auto" },
-  ] as const;
-
   async function handleScan(kind: ScanKind, blob: Blob) {
     setScanMessage(null);
     setFailedOcrText(null);
     setPreviews((prev) => ({ ...prev, [kind]: URL.createObjectURL(blob) }));
     setOcrBusy((prev) => ({ ...prev, [kind]: true }));
     try {
-      let applied = false;
+      // Each image treatment reads different parts of a faded printout, so
+      // keep the first good reading found for each eye and stop once both
+      // eyes are covered.
+      const keratometry = new Map<EyeSide, KeratometryReading>();
+      const biometry = new Map<EyeSide, BiometryReading>();
       let bestText = "";
 
-      for (const attempt of OCR_ATTEMPTS) {
-        const text = await recognizeText(blob, attempt);
+      for await (const text of recognizeVariants(blob)) {
         if (text.trim().length > bestText.trim().length) bestText = text;
 
         if (kind === "topography") {
-          const readings = parseTopographyText(text);
-          if (readings.length > 0) {
-            setRows((prev) => {
-              const next = { ...prev };
-              for (const reading of readings) next[reading.side] = applyKeratometry(next[reading.side], reading);
-              return next;
-            });
-            applied = true;
-            break;
+          for (const reading of parseTopographyText(text)) {
+            if (!keratometry.has(reading.side)) keratometry.set(reading.side, reading);
           }
+          if (keratometry.size === 2) break;
         } else {
-          const readings = parseBiometryText(text);
-          if (readings.length > 0) {
-            setRows((prev) => {
-              const next = { ...prev };
-              for (const reading of readings) next[reading.side] = applyBiometry(next[reading.side], reading);
-              return next;
-            });
-            applied = true;
-            break;
+          for (const reading of parseBiometryText(text)) {
+            if (!biometry.has(reading.side)) biometry.set(reading.side, reading);
           }
+          if (biometry.size === 2) break;
         }
       }
 
-      if (!applied) {
+      const found = kind === "topography" ? keratometry : biometry;
+      if (found.size === 0) {
         setScanMessage(
           kind === "topography"
-            ? "Couldn't find K readings in that photo. Get closer so the numbers fill the frame, keep it flat and well-lit — and note that handwriting usually can't be read; printed values work best."
-            : "Couldn't find AL/ACD readings in that photo. Get closer so the printout fills the frame, keep it flat and well-lit, then retake.",
+            ? "Couldn't read the K values from that photo. Move closer so the numbers fill the frame, hold the paper flat and well-lit, then retake — or type the values in below."
+            : "Couldn't read the AL/ACD values from that photo. Move closer so the printout fills the frame, hold it flat and well-lit, then retake — or type the values in below.",
         );
         setFailedOcrText(bestText.trim() || "(nothing readable)");
+        return;
       }
+
+      setRows((prev) => {
+        const next = { ...prev };
+        for (const reading of keratometry.values()) {
+          next[reading.side] = applyKeratometry(next[reading.side], reading);
+        }
+        for (const reading of biometry.values()) {
+          next[reading.side] = applyBiometry(next[reading.side], reading);
+        }
+        return next;
+      });
+
+      const missing = (["OD", "OS"] as const).filter((side) => !found.has(side));
+      const assumedOrder = [...biometry.values()].some((r) => r.sideSource === "order");
+      const notes: string[] = [];
+      if (missing.length === 1) {
+        notes.push(`Only ${found.keys().next().value} could be read — check ${missing[0]} by hand.`);
+      }
+      if (assumedOrder) {
+        notes.push(
+          "The OD/OS labels weren't legible, so values were assigned in printed order (OD first). Confirm they're on the right eye.",
+        );
+      }
+      setScanMessage(notes.length > 0 ? notes.join(" ") : null);
+      if (notes.length > 0) setFailedOcrText(bestText.trim());
     } catch {
-      setScanMessage("OCR failed on that photo. You can retake it or enter values by hand below.");
+      setScanMessage("Scanning failed on that photo. You can retake it or type the values in below.");
     } finally {
       setOcrBusy((prev) => ({ ...prev, [kind]: false }));
     }

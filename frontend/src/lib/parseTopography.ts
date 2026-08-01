@@ -1,20 +1,17 @@
+import { decimalsIn, inRange, normalizeOcrNumbers, RANGES } from "./ocrText";
 import { parseDecimal } from "./numeric";
 import type { EyeSide, KeratometryReading } from "./types";
 
-const NUM = "[\\d]+[.,][\\d]+";
-
 /**
- * Keratometer strip blocks like "<R> Sim K's". OCR often mangles the
- * angle brackets and letters, so the markers are matched loosely:
- * "<R>", "(R)", "R>" and "Slm"/"S1m" for "Sim" all count.
+ * Keratometer strip blocks like "<R> Sim K's". Real OCR mangles this
+ * badly — observed variants include "<R> Sim K's", "<R> g§ im K'g",
+ * "<R> Sim Kk", "R> Slm Ks" — so only the bracketed R/L and a following
+ * K-ish token are required.
  */
-const EYE_BLOCK =
-  /[<(]?\s*([RL])\s*[>)]?\s*S[il1]m\s*K['’`]?s([\s\S]*?)(?=[<(]?\s*[RL]\s*[>)]?\s*S[il1]m\s*K|$)/gi;
-const K_PAIR = new RegExp(`(${NUM})\\s*\\(\\s*(${NUM})\\s*\\)`, "g");
-const DK_LINE = new RegExp(`dk\\s*(${NUM})`, "i");
+const EYE_BLOCK = /[<(]\s*([RL])\s*[>)][^\n]*?K[^\n]*\n([\s\S]*?)(?=[<(]\s*[RL]\s*[>)]|$)/gi;
 
 /** Explicitly labeled values: "K1 43.93", "K2: 46.44". */
-const K_LABELED = new RegExp(`K\\s*([12])\\s*[:=]?\\s*(${NUM})`, "gi");
+const K_LABELED = /K\s*([12])\s*[:=]?\s*(\d+\.\d+)/gi;
 /** Eye column/section headers; "OE" is Portuguese for the left eye. */
 const SIDE_TOKEN = /\b(OD|OE|OS)\b/g;
 
@@ -29,45 +26,28 @@ function buildReading(side: EyeSide, a: number, b: number): KeratometryReading {
 }
 
 /**
- * Parses OCR text from an autokeratometer/topographer strip such as:
+ * Parses the autokeratometer strip:
  *
  *   <R> Sim K's
  *   45.06( 7.49)
  *   44.16( 7.64)
  *   dk 0.90( 0.15)
  *
- * The strip prints the two K values without identifying which is K1 — by
- * the calculator's convention, K1 is always the lower of the two.
+ * The parenthesised corneal radii and the "dk" line are frequently
+ * corrupted by OCR (stray "¢", missing brackets, split digits), so rather
+ * than matching that punctuation this takes every number in the block and
+ * keeps only those in keratometry range — radii (~7-9) and dk (<10) fall
+ * out automatically. The strip never says which value is K1, so the
+ * calculator's convention applies: K1 is the lower of the two.
  */
 function parseSimKStrip(text: string): KeratometryReading[] {
   const readings: KeratometryReading[] = [];
 
   for (const blockMatch of text.matchAll(EYE_BLOCK)) {
     const side: EyeSide = blockMatch[1].toUpperCase() === "R" ? "OD" : "OS";
-    const blockText = blockMatch[2];
-
-    const pairs = [...blockText.matchAll(K_PAIR)].slice(0, 2);
-    if (pairs.length < 2) continue;
-
-    const [first, second] = pairs.map((m) => ({
-      k: parseDecimal(m[1]),
-      r: parseDecimal(m[2]),
-    }));
-
-    const lower = first.k <= second.k ? first : second;
-    const higher = first.k <= second.k ? second : first;
-
-    const dkMatch = blockText.match(DK_LINE);
-    const cylinder = dkMatch ? parseDecimal(dkMatch[1]) : Number((higher.k - lower.k).toFixed(2));
-
-    readings.push({
-      side,
-      k1: lower.k,
-      k2: higher.k,
-      r1: lower.r,
-      r2: higher.r,
-      cylinder,
-    });
+    const kValues = decimalsIn(blockMatch[2]).filter((n) => inRange(n, RANGES.keratometry));
+    if (kValues.length < 2) continue;
+    readings.push(buildReading(side, kValues[0], kValues[1]));
   }
 
   return readings;
@@ -91,7 +71,9 @@ function parseLabeledK(text: string): KeratometryReading[] {
   const k1s: number[] = [];
   const k2s: number[] = [];
   for (const match of text.matchAll(K_LABELED)) {
-    (match[1] === "1" ? k1s : k2s).push(parseDecimal(match[2]));
+    const value = parseDecimal(match[2]);
+    if (!inRange(value, RANGES.keratometry)) continue;
+    (match[1] === "1" ? k1s : k2s).push(value);
   }
 
   let order: [EyeSide, EyeSide] = ["OD", "OS"];
@@ -119,7 +101,8 @@ function parseLabeledK(text: string): KeratometryReading[] {
   return [];
 }
 
-export function parseTopographyText(text: string): KeratometryReading[] {
+export function parseTopographyText(rawText: string): KeratometryReading[] {
+  const text = normalizeOcrNumbers(rawText);
   const fromStrip = parseSimKStrip(text);
   if (fromStrip.length > 0) return fromStrip;
   return parseLabeledK(text);

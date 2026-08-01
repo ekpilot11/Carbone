@@ -21,6 +21,12 @@ export interface KeratometryReading {
 
 export interface BiometryReading {
   side: EyeSide;
+  /**
+   * Whether the eye was identified from a printed marker, or assumed from
+   * print order because the marker was unreadable — the UI warns on the
+   * latter so a swapped OD/OS can't slip into a surgical calculation.
+   */
+  sideSource: "marker" | "order";
   /** Axial length, in mm. */
   axialLength: number;
   /** Anterior chamber depth, in mm. */
