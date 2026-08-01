@@ -1,4 +1,4 @@
-import { chromium, type Locator, type Page } from "playwright";
+import { chromium, type Frame, type Locator, type Page } from "playwright";
 import type { CalculateRequest, CalculateResponse, EyeInput } from "./types.js";
 
 export const CALCULATOR_URL = "https://calc.apacrs.org/barrett_universal2105/";
@@ -13,9 +13,12 @@ export const CALCULATOR_URL = "https://calc.apacrs.org/barrett_universal2105/";
  * before Lens Factor to let Lens Factor win). Doctor/Patient Name and
  * Patient ID are left blank on purpose — no PHI is ever sent.
  *
- * Still not verified end-to-end against a real submission; `npm run
- * inspect` from an unrestricted machine remains the way to confirm
- * (see backend/README.md).
+ * A first live run failed to find ANY of these labels on the top-level
+ * page, so the form likely renders inside a frame or behind the "Patient
+ * Data" tab — lookups now search every frame, retry while the page settles,
+ * and report a diagnostic snapshot of what was actually served when they
+ * still fail. `npm run inspect` from an unrestricted machine remains the
+ * definitive way to pin selectors (see backend/README.md).
  */
 const PER_EYE_FIELDS = {
   axialLength: ["Axial Length"],
@@ -31,8 +34,12 @@ const SINGLE_FIELDS = {
   lensFactor: ["Lens Factor"],
 } as const;
 
+/** Label text that must exist wherever the form actually renders. */
+const FORM_ANCHOR = "Axial Length";
+
 type PerEyeField = keyof typeof PER_EYE_FIELDS;
 type SingleField = keyof typeof SINGLE_FIELDS;
+type SearchRoot = Page | Frame;
 
 /** Fills a located control regardless of whether it's a text input, a <select>, or a radio/checkbox. */
 async function setLocatorValue(locator: Locator, value: string): Promise<void> {
@@ -57,23 +64,75 @@ async function setLocatorValue(locator: Locator, value: string): Promise<void> {
 }
 
 /**
+ * Finds where the form actually lives: polls the page and every (i)frame,
+ * in case the form arrives late or sits in an embedded document. On the
+ * first miss it also tries clicking a "Patient Data" tab in case the form
+ * only renders once that tab is active.
+ */
+async function findFormRoot(page: Page, timeoutMs: number): Promise<SearchRoot | null> {
+  const deadline = Date.now() + timeoutMs;
+  let triedTabClick = false;
+
+  while (Date.now() < deadline) {
+    const roots: SearchRoot[] = [page, ...page.frames()];
+    for (const root of roots) {
+      const count = await root
+        .getByText(FORM_ANCHOR, { exact: false })
+        .count()
+        .catch(() => 0);
+      if (count > 0) return root;
+    }
+
+    if (!triedTabClick) {
+      triedTabClick = true;
+      await page
+        .getByText("Patient Data", { exact: false })
+        .first()
+        .click({ timeout: 2000 })
+        .catch(() => {});
+    }
+
+    await page.waitForTimeout(500);
+  }
+  return null;
+}
+
+/** Collects what the page actually served, for actionable error messages. */
+async function describePage(page: Page): Promise<string> {
+  const title = await page.title().catch(() => "(unreadable)");
+  const frameUrls = page
+    .frames()
+    .map((f) => f.url())
+    .filter((u) => u && u !== "about:blank");
+  const bodyText = await page
+    .locator("body")
+    .innerText({ timeout: 3000 })
+    .then((t) => t.replace(/\s+/g, " ").trim().slice(0, 300))
+    .catch(() => "(unreadable)");
+  return (
+    `page title: "${title}"; url: ${page.url()}; ` +
+    `frames: [${frameUrls.join(", ") || "none"}]; visible text starts with: "${bodyText}"`
+  );
+}
+
+/**
  * Finds the Nth control for a visible label. Tries an accessible
  * label association first; the page predates those conventions, so the
  * workhorse is the fallback: anchor on the Nth occurrence of the label
  * text and take the first form control after it in document order.
  */
 async function locateByLabelText(
-  page: Page,
+  root: SearchRoot,
   labels: readonly string[],
   occurrence: number,
 ): Promise<Locator | null> {
   for (const label of labels) {
-    const byLabel = page.getByLabel(label, { exact: false });
+    const byLabel = root.getByLabel(label, { exact: false });
     if ((await byLabel.count()) > occurrence) {
       return byLabel.nth(occurrence);
     }
 
-    const anchors = page.getByText(label, { exact: false });
+    const anchors = root.getByText(label, { exact: false });
     if ((await anchors.count()) > occurrence) {
       const control = anchors
         .nth(occurrence)
@@ -86,7 +145,7 @@ async function locateByLabelText(
   return null;
 }
 
-async function fillEye(page: Page, eye: EyeInput, eyeIndex: 0 | 1): Promise<string[]> {
+async function fillEye(root: SearchRoot, eye: EyeInput, eyeIndex: 0 | 1): Promise<string[]> {
   const attempts: Array<[PerEyeField, string]> = [
     ["axialLength", String(eye.biometry.axialLength)],
     ["k1", String(eye.keratometry.k1)],
@@ -100,7 +159,7 @@ async function fillEye(page: Page, eye: EyeInput, eyeIndex: 0 | 1): Promise<stri
 
   const missing: string[] = [];
   for (const [field, value] of attempts) {
-    const control = await locateByLabelText(page, PER_EYE_FIELDS[field], eyeIndex);
+    const control = await locateByLabelText(root, PER_EYE_FIELDS[field], eyeIndex);
     if (control) {
       await setLocatorValue(control, value);
     } else {
@@ -110,7 +169,7 @@ async function fillEye(page: Page, eye: EyeInput, eyeIndex: 0 | 1): Promise<stri
   return missing;
 }
 
-async function fillSingles(page: Page, request: CalculateRequest): Promise<string[]> {
+async function fillSingles(root: SearchRoot, request: CalculateRequest): Promise<string[]> {
   // Both eyes carry identical fixed IOL constants; validated upstream.
   const attempts: Array<[SingleField, string]> = [
     ["aConstant", String(request.od.iol.aConstant)],
@@ -119,7 +178,7 @@ async function fillSingles(page: Page, request: CalculateRequest): Promise<strin
 
   const missing: string[] = [];
   for (const [field, value] of attempts) {
-    const control = await locateByLabelText(page, SINGLE_FIELDS[field], 0);
+    const control = await locateByLabelText(root, SINGLE_FIELDS[field], 0);
     if (control) {
       await setLocatorValue(control, value);
     } else {
@@ -129,8 +188,18 @@ async function fillSingles(page: Page, request: CalculateRequest): Promise<strin
   return missing;
 }
 
-async function extractResultsText(page: Page): Promise<string> {
-  const iolPowerHeading = page.locator("text=/IOL Power/i").first();
+async function clickCalculate(root: SearchRoot): Promise<void> {
+  const byRole = root.getByRole("button", { name: /^calculate$/i });
+  if ((await byRole.count()) > 0) {
+    await byRole.first().click();
+    return;
+  }
+  // Older pages often use <input type="submit" value="Calculate">.
+  await root.locator('input[type="submit"][value*="alculate"], input[type="button"][value*="alculate"]').first().click();
+}
+
+async function extractResultsText(root: SearchRoot): Promise<string> {
+  const iolPowerHeading = root.locator("text=/IOL Power/i").first();
   if (await iolPowerHeading.count()) {
     const table = iolPowerHeading.locator("xpath=ancestor::table[1]");
     if (await table.count()) {
@@ -139,43 +208,56 @@ async function extractResultsText(page: Page): Promise<string> {
     }
   }
 
-  const lastTable = page.locator("table").last();
+  const lastTable = root.locator("table").last();
   if (await lastTable.count()) {
     const text = await lastTable.innerText().catch(() => null);
     if (text?.trim()) return text.trim();
   }
 
-  return (await page.locator("body").innerText()).trim();
+  return (await root.locator("body").innerText()).trim();
 }
 
 const UNVERIFIED_WARNING =
   "Field mapping was matched to a screenshot of the calculator but has not been verified " +
   "with a real end-to-end submission. Confirm every number against calc.apacrs.org before clinical use.";
 
+const USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
 export async function runBarrettCalculation(request: CalculateRequest): Promise<CalculateResponse> {
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await browser.newPage();
+    const page = await browser.newPage({ userAgent: USER_AGENT });
     await page.goto(CALCULATOR_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
 
+    const formRoot = await findFormRoot(page, 15000);
+    if (!formRoot) {
+      throw new Error(
+        `Couldn't find the calculator form (no "${FORM_ANCHOR}" text anywhere on the page or its ` +
+          `frames). What was actually served — ${await describePage(page)}. If this text mentions ` +
+          `access denied or verification, the site may be blocking automated browsers; otherwise run ` +
+          `"npm run inspect" (backend/README.md) and update the selectors from its output.`,
+      );
+    }
+
     const missing = [
-      ...(await fillSingles(page, request)),
-      ...(await fillEye(page, request.od, 0)),
-      ...(await fillEye(page, request.os, 1)),
+      ...(await fillSingles(formRoot, request)),
+      ...(await fillEye(formRoot, request.od, 0)),
+      ...(await fillEye(formRoot, request.os, 1)),
     ];
 
     if (missing.length > 0) {
       throw new Error(
-        `Could not locate these fields on the calculator page, so nothing was submitted: ` +
-          `${missing.join(", ")}. The site's form has likely changed since these selectors were ` +
-          `written — see backend/README.md to update them with "npm run inspect".`,
+        `Found the calculator form but couldn't locate these fields, so nothing was submitted: ` +
+          `${missing.join(", ")}. Diagnostic — ${await describePage(page)}. Run "npm run inspect" ` +
+          `(backend/README.md) and update the selectors from its output.`,
       );
     }
 
-    await page.getByRole("button", { name: /^calculate$/i }).click();
+    await clickCalculate(formRoot);
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
 
-    const resultsText = await extractResultsText(page);
+    const resultsText = await extractResultsText(formRoot);
     return { resultsText, warning: UNVERIFIED_WARNING };
   } finally {
     await browser.close();
