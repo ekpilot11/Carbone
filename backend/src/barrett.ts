@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium, type Frame, type Locator, type Page } from "playwright";
-import type { CalculateRequest, CalculateResponse, EyeInput } from "./types.js";
+import type { CalculateRequest, CalculateResponse, EyeInput, IolTableRow } from "./types.js";
 
 export const CALCULATOR_URL = "https://calc.apacrs.org/barrett_universal2105/";
 
@@ -298,6 +298,40 @@ interface ExtractedResults {
   text: string;
   od?: string;
   os?: string;
+  tables?: { od: IolTableRow[]; os: IolTableRow[] };
+}
+
+const NUMBER_TOKEN = /^-?\d+(?:\.\d+)?$/;
+
+/**
+ * Parses one table section's "power optic refraction" row triplets from a
+ * whitespace token stream — resilient to innerText putting cells on one
+ * line or several. Stops at the first token run that doesn't fit the
+ * pattern (i.e. whatever text follows the table).
+ */
+function parseTableRows(section: string): IolTableRow[] {
+  const tokens = section.trim().split(/\s+/);
+  const rows: IolTableRow[] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    if (!NUMBER_TOKEN.test(tokens[i])) break;
+    const power = tokens[i++];
+    const optic: string[] = [];
+    while (i < tokens.length && !NUMBER_TOKEN.test(tokens[i])) optic.push(tokens[i++]);
+    if (i >= tokens.length || optic.length === 0) break;
+    rows.push({ power, optic: optic.join(" "), refraction: tokens[i++] });
+  }
+  return rows;
+}
+
+/** Splits the results text at each table header; OD's table precedes OS's in document order. */
+function parseTables(text: string): ExtractedResults["tables"] {
+  const sections = text.split(/IOL Power\s+Optic\s+Refraction/i).slice(1);
+  if (sections.length < 2) return undefined;
+  const od = parseTableRows(sections[0]);
+  const os = parseTableRows(sections[1]);
+  if (od.length === 0 || os.length === 0) return undefined;
+  return { od, os };
 }
 
 /**
@@ -317,12 +351,8 @@ async function extractResults(root: SearchRoot): Promise<ExtractedResults> {
 
   const recommendations = [...body.matchAll(/Recommended IOL:\s*(-?[\d.]+)/gi)].map((m) => m[1]);
 
-  return { text, od: recommendations[0], os: recommendations[1] };
+  return { text, od: recommendations[0], os: recommendations[1], tables: parseTables(body) };
 }
-
-const UNVERIFIED_WARNING =
-  "Field mapping was matched to a screenshot of the calculator but has not been verified " +
-  "with a real end-to-end submission. Confirm every number against calc.apacrs.org before clinical use.";
 
 /**
  * calc.apacrs.org sits behind Cloudflare bot protection (confirmed by an
@@ -445,8 +475,10 @@ export async function runBarrettCalculation(request: CalculateRequest): Promise<
       );
     }
 
-    const { text, od, os } = await extractResults(resultsRoot);
-    return { resultsText: text, recommended: { od, os }, warning: UNVERIFIED_WARNING };
+    // Verified end-to-end 2026-08-01: a live automated run returned tables
+    // identical to a manual run on the official site with the same inputs.
+    const { text, od, os, tables } = await extractResults(resultsRoot);
+    return { resultsText: text, recommended: { od, os }, tables };
   } finally {
     await browser.close();
   }

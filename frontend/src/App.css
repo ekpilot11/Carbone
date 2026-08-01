@@ -241,3 +241,77 @@ button.secondary,
   overflow-x: auto;
   white-space: pre-wrap;
 }
+
+.result-tables {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.result-table-card {
+  border: 1px solid #dde2e8;
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+}
+
+.result-table-card h3 {
+  margin: 0 0 0.6rem;
+  font-size: 1rem;
+}
+
+.iol-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.iol-table th {
+  text-align: left;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #5b6470;
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid #dde2e8;
+}
+
+.iol-table td {
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid #eef1f4;
+}
+
+.iol-table .best-row td {
+  background: #e3f6e8;
+  font-weight: 700;
+  border-top: 1.5px solid #7ac48d;
+  border-bottom: 1.5px solid #7ac48d;
+}
+
+.iol-table .best-cell {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #1e7c3c;
+  white-space: nowrap;
+}
+
+.raw-details {
+  margin-top: 0.9rem;
+}
+
+.raw-details summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #5b6470;
+}
+
+.raw-details pre {
+  background: #f4f6f8;
+  padding: 0.75rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  margin-top: 0.5rem;
+}

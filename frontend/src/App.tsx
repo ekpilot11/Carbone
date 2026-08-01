@@ -1,7 +1,7 @@
 import { useState } from "react";
 import "./App.css";
 import { CameraCapture } from "./components/CameraCapture";
-import { calculateBarrett, type CalculateResponse } from "./lib/api";
+import { calculateBarrett, type CalculateResponse, type IolTableRow } from "./lib/api";
 import {
   applyBiometry,
   applyKeratometry,
@@ -200,9 +200,22 @@ function App() {
               </div>
             </div>
           )}
-          <div className="result-card">
-            <pre>{result.resultsText}</pre>
-          </div>
+          {result.tables ? (
+            <>
+              <div className="result-tables">
+                <EyeResultTable title="OD (right eye)" rows={result.tables.od} />
+                <EyeResultTable title="OS (left eye)" rows={result.tables.os} />
+              </div>
+              <details className="raw-details">
+                <summary>Raw calculator text</summary>
+                <pre>{result.resultsText}</pre>
+              </details>
+            </>
+          ) : (
+            <div className="result-card">
+              <pre>{result.resultsText}</pre>
+            </div>
+          )}
           <p className="hint">
             Verify these figures against{" "}
             <a href={CALCULATOR_URL} target="_blank" rel="noopener noreferrer">
@@ -212,6 +225,51 @@ function App() {
           </p>
         </section>
       )}
+    </div>
+  );
+}
+
+interface EyeResultTableProps {
+  title: string;
+  rows: IolTableRow[];
+}
+
+function EyeResultTable({ title, rows }: EyeResultTableProps) {
+  // Highlight the option that lands closest to plano (refraction 0) —
+  // normally the middle row of the 7 the calculator returns.
+  let bestIndex = -1;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  rows.forEach((row, i) => {
+    const distance = Math.abs(Number.parseFloat(row.refraction));
+    if (Number.isFinite(distance) && distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = i;
+    }
+  });
+
+  return (
+    <div className="result-table-card">
+      <h3>{title}</h3>
+      <table className="iol-table">
+        <thead>
+          <tr>
+            <th>IOL Power</th>
+            <th>Optic</th>
+            <th>Refraction</th>
+            <th aria-hidden="true"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={`${row.power}-${i}`} className={i === bestIndex ? "best-row" : undefined}>
+              <td>{row.power}</td>
+              <td>{row.optic}</td>
+              <td>{row.refraction}</td>
+              <td className="best-cell">{i === bestIndex ? "closest to 0" : ""}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

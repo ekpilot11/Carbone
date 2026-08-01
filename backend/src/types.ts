@@ -28,10 +28,18 @@ export interface CalculateRequest {
   os: EyeInput;
 }
 
+export interface IolTableRow {
+  power: string;
+  optic: string;
+  refraction: string;
+}
+
 export interface CalculateResponse {
   /** The calculator's results panel text, from "Right Eye (OD)" onward. */
   resultsText: string;
   /** Recommended IOL power per eye, parsed out of resultsText when present. */
   recommended?: { od?: string; os?: string };
+  /** The per-eye "IOL Power | Optic | Refraction" tables, when both parsed cleanly. */
+  tables?: { od: IolTableRow[]; os: IolTableRow[] };
   warning?: string;
 }

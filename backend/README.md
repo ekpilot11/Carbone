@@ -4,18 +4,15 @@ Express server exposing `POST /api/calculate`, which drives a headless
 Chromium (via Playwright) to fill scanned/reviewed clinical values into
 https://calc.apacrs.org/barrett_universal2105/ and scrape back the results.
 
-## ⚠️ Field mapping is screenshot-derived, not yet verified end-to-end
+## Field mapping — verified 2026-08-01, re-verify if the site changes
 
-This code was written in a sandbox where outbound requests to
-`calc.apacrs.org` were blocked at the network level. The field mapping in
-`src/barrett.ts` (`PER_EYE_FIELDS` / `SINGLE_FIELDS`) was transcribed from
-a screenshot of the live form's "Patient Data" tab (July 2026): per-eye
-rows labeled Axial Length / Measured K1 / Measured K2 / Optical ACD /
-Refraction / Lens Thickness with the (R) input before the (L) one, plus
-form-wide Lens Factor and A Constant singles. Because the page likely has
-no programmatic label-input association, the locator anchors on the visible
-label text and takes the next form control in document order — plausible,
-but unconfirmed against the real DOM. Before trusting this in any real use:
+The field mapping in `src/barrett.ts` was built from screenshots of the
+live form's "Patient Data" tab and **verified end-to-end on 2026-08-01**:
+a live automated run returned IOL Power tables identical to a manual run
+on the official site with the same inputs. The page has no programmatic
+label-input association, so the locator anchors on visible label text and
+takes the next form control in document order. If the site's layout ever
+changes and runs start failing, re-verify with the steps below:
 
 1. From a machine with normal internet access, run:
 
@@ -44,13 +41,8 @@ but unconfirmed against the real DOM. Before trusting this in any real use:
    heuristics there (look for an "IOL Power" heading, else the last
    `<table>`, else the whole page) don't land on the right content.
 
-5. Run an end-to-end request against the real site and read the response
-   `resultsText` to confirm it's sane before removing/relying past the
-   `warning` field the API currently always returns.
-
-Until this verification happens, every `/api/calculate` response includes
-a `warning` telling the caller to double-check results manually — don't
-remove that until step 5 above is actually done.
+5. Run an end-to-end request against the real site and confirm the
+   response's tables match a manual run with the same inputs.
 
 ## Running
 

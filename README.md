@@ -37,18 +37,21 @@ handle them per your clinic's data protection policy (e.g. LGPD in Brazil).
   (`POST /api/calculate`) that fills the confirmed values into the Barrett
   Universal II calculator and scrapes back the results.
 
-## Important limitation: the Barrett automation is unverified
+## Status: verified working (2026-08-01)
 
-This project was built in a sandboxed environment whose outbound network
-was policy-blocked from reaching `calc.apacrs.org`. The Playwright
-automation in `backend/src/barrett.ts` was therefore written from general
-knowledge of the calculator's typical layout, not from the live page — its
-field selectors need to be confirmed before you rely on it. See
-[`backend/README.md`](backend/README.md) for how to do that with `npm run
-inspect`. Until then, treat any `warning` in the API response as a hard
-requirement to double-check results manually, and use the app's "Copy
-values" / "Open calculator manually" buttons as your primary path if in
-doubt.
+The automation was verified end-to-end against the live calculator: an
+automated run returned IOL Power tables identical to a manual run with the
+same inputs. Two operational notes:
+
+- `calc.apacrs.org` sits behind Cloudflare bot protection. The automation
+  opens a **visible** browser window and, when Cloudflare shows its
+  verification, the person at the machine completes it by hand — this
+  project deliberately does not evade bot protection. See
+  [`backend/README.md`](backend/README.md).
+- If the site's form layout ever changes and runs start failing, re-pin
+  the selectors with `npm run inspect` per the backend README, and fall
+  back to the app's "Copy values" / "Open calculator manually" buttons
+  meanwhile.
 
 ## Setup
 
