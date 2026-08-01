@@ -117,6 +117,33 @@ If the automation cannot select a **non-default** index it stops without
 submitting, rather than let the site compute against 1.3375 and hand back
 plausible wrong powers.
 
+## A day at a time (batch)
+
+Selecting **several photos at once** switches the app to the batch view —
+one patient per photo, which suits photographing a day's exams and
+processing them together.
+
+Photos are read three at a time, and each becomes an editable row: the
+patient's name (from the photo when legible), both eyes' values, and a note
+saying what couldn't be read. **Nothing is calculated until you press
+Calculate**, so the review step survives the batch — what batching removes
+is the repetition, not the checking. Calculations then run two at a time
+against calc.apacrs.org (deliberately gentle on someone else's site), and
+the results appear per row as they land.
+
+Rows that need attention say so rather than passing quietly:
+
+- a photo that couldn't be read completely is counted separately and
+  skipped unless you fill it in;
+- an eye that is only half filled in is named on the row — that eye is left
+  out of the calculation, never silently included;
+- editing a row after it was calculated marks the result as out of date,
+  and the record keeps reporting the values that actually produced it until
+  you calculate again.
+
+Finish with **Download N records (one PDF)** — a single file, one page per
+patient, in upload order — or take any single patient's record on its own.
+
 ## Medical record (PDF)
 
 After a calculation, the results view offers a one-page PDF holding each

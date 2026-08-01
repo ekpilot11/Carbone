@@ -117,6 +117,33 @@ const en = {
     `Calculated with ${lens}${constants} — as read back off the calculator page.`,
   verifyAgainst: "Verify these figures against calc.apacrs.org before using them clinically.",
 
+  batchTitle: (count: number) => `Batch — ${count} photo${count === 1 ? "" : "s"}`,
+  batchHint:
+    "One patient per photo. Every photo is read, then listed here for you to check before anything is calculated — same rules as a single patient, just without the repetition. Correct anything that looks wrong, then calculate them all in one go.",
+  batchClose: "Back to one patient",
+  batchCounts: (scanning: number, ready: number, done: number, failed: number) =>
+    `${scanning} reading · ${ready} to review · ${done} calculated · ${failed} failed.`,
+  batchIncomplete: (count: number) =>
+    `${count} could not be read completely — fill those in or they will be skipped.`,
+  batchCalculateAll: (count: number) => `Calculate ${count} patient${count === 1 ? "" : "s"}`,
+  batchDownloadAll: (count: number) =>
+    `Download ${count} record${count === 1 ? "" : "s"} (one PDF)`,
+  batchCalculatingHint:
+    "Calculations run two at a time against the official calculator, so a full day takes a couple of minutes. You can keep this tab open and check the results as they land.",
+  batchScanUnavailable:
+    "Batch reading needs the server's vision model (ANTHROPIC_API_KEY). Without it, photos have to be read one at a time on this device.",
+  batchPartialEye: (sides: string) =>
+    `${sides} is only half filled in — complete it or clear it, otherwise that eye is left out of the calculation.`,
+  batchStale:
+    "These values changed after the calculation — the result below is from the old ones. Calculate again to update it.",
+  batchStaleCount: (count: number) => `${count} changed after being calculated.`,
+  batchStatusScanning: "reading…",
+  batchStatusReady: "to review",
+  batchStatusCalculating: "calculating…",
+  batchStatusDone: "done",
+  batchStatusFailed: "failed",
+  batchUploadHint: "Selecting several photos at once opens the batch view — one patient per photo.",
+
   recordTitle: "Medical record (PDF)",
   recordHint:
     "Saves the measurements and the recommended IOL as a one-page PDF, on this device only — nothing is uploaded. The name is filled in from the photo when it's legible; check it before saving.",
@@ -255,6 +282,33 @@ const pt: Strings = {
   lensUsed: (lens: string, constants: string) =>
     `Calculado com ${lens}${constants} — conforme lido de volta na página da calculadora.`,
   verifyAgainst: "Confira estes valores em calc.apacrs.org antes de usá-los clinicamente.",
+
+  batchTitle: (count: number) => `Lote — ${count} foto${count === 1 ? "" : "s"}`,
+  batchHint:
+    "Um paciente por foto. Cada foto é lida e listada aqui para você conferir antes de qualquer cálculo — as mesmas regras de um paciente só, sem a repetição. Corrija o que estiver errado e calcule todos de uma vez.",
+  batchClose: "Voltar para um paciente",
+  batchCounts: (scanning: number, ready: number, done: number, failed: number) =>
+    `${scanning} lendo · ${ready} para revisar · ${done} calculados · ${failed} com falha.`,
+  batchIncomplete: (count: number) =>
+    `${count} não puderam ser lidos por completo — preencha-os ou serão ignorados.`,
+  batchCalculateAll: (count: number) => `Calcular ${count} paciente${count === 1 ? "" : "s"}`,
+  batchDownloadAll: (count: number) =>
+    `Baixar ${count} prontuário${count === 1 ? "" : "s"} (um PDF)`,
+  batchCalculatingHint:
+    "Os cálculos rodam dois por vez na calculadora oficial, então um dia inteiro leva alguns minutos. Você pode deixar esta aba aberta e acompanhar os resultados chegando.",
+  batchScanUnavailable:
+    "A leitura em lote precisa do modelo de visão no servidor (ANTHROPIC_API_KEY). Sem ele, as fotos precisam ser lidas uma a uma neste dispositivo.",
+  batchPartialEye: (sides: string) =>
+    `${sides} está preenchido pela metade — complete-o ou limpe-o; caso contrário esse olho fica de fora do cálculo.`,
+  batchStale:
+    "Estes valores mudaram depois do cálculo — o resultado abaixo é dos valores antigos. Calcule de novo para atualizar.",
+  batchStaleCount: (count: number) => `${count} mudaram depois de calculados.`,
+  batchStatusScanning: "lendo…",
+  batchStatusReady: "para revisar",
+  batchStatusCalculating: "calculando…",
+  batchStatusDone: "pronto",
+  batchStatusFailed: "falhou",
+  batchUploadHint: "Selecionar várias fotos de uma vez abre a visão em lote — um paciente por foto.",
 
   recordTitle: "Prontuário (PDF)",
   recordHint:

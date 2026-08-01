@@ -1,6 +1,6 @@
 /**
- * A very small PDF writer — enough for a one-page, text-and-rules clinical
- * record, and nothing more.
+ * A very small PDF writer — enough for text-and-rules clinical records, one
+ * page per patient, and nothing more.
  *
  * Why hand-rolled rather than a PDF library: the record carries the
  * patient's name and their measurements, so it is built and saved entirely
@@ -30,10 +30,13 @@ export interface PdfRule {
   gray?: number;
 }
 
-export interface PdfDocument {
-  title: string;
+export interface PdfPage {
   texts: PdfText[];
   rules?: PdfRule[];
+}
+
+export interface PdfDocument extends PdfPage {
+  title: string;
   /** Defaults to A4 portrait. */
   pageWidth?: number;
   pageHeight?: number;
@@ -65,7 +68,7 @@ function round(value: number): string {
   return (Math.round(value * 100) / 100).toString();
 }
 
-function buildContentStream(doc: PdfDocument, height: number): string {
+function buildContentStream(doc: PdfPage, height: number): string {
   const parts: string[] = [];
 
   for (const rule of doc.rules ?? []) {
@@ -88,21 +91,54 @@ function buildContentStream(doc: PdfDocument, height: number): string {
 }
 
 export function buildPdf(doc: PdfDocument): Uint8Array {
-  const width = doc.pageWidth ?? A4_WIDTH;
-  const height = doc.pageHeight ?? A4_HEIGHT;
-  const content = buildContentStream(doc, height);
-  const contentLength = latin1Bytes(content).length;
+  return buildPdfPages(doc.title, [doc], {
+    width: doc.pageWidth,
+    height: doc.pageHeight,
+  });
+}
 
-  const objects = [
+/**
+ * One document, one page per entry — a day's batch comes out as a single
+ * file rather than thirty downloads.
+ */
+export function buildPdfPages(
+  title: string,
+  pages: PdfPage[],
+  size: { width?: number; height?: number } = {},
+): Uint8Array {
+  const width = size.width ?? A4_WIDTH;
+  const height = size.height ?? A4_HEIGHT;
+  const sheets = pages.length > 0 ? pages : [{ texts: [] }];
+
+  // Object numbering: 1 catalog, 2 page tree, then a page + its content
+  // stream per sheet, then the two fonts and the info dictionary.
+  const pageRef = (index: number) => 3 + index * 2;
+  const fontRef = 3 + sheets.length * 2;
+  const infoRef = fontRef + 2;
+
+  const objects: string[] = [
     "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${round(width)} ${round(height)}] ` +
-      "/Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>",
-    `<< /Length ${contentLength} >>\nstream\n${content}\nendstream`,
+    `<< /Type /Pages /Kids [${sheets.map((_, i) => `${pageRef(i)} 0 R`).join(" ")}] ` +
+      `/Count ${sheets.length} >>`,
+  ];
+
+  for (const [index, sheet] of sheets.entries()) {
+    const content = buildContentStream(sheet, height);
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${round(width)} ${round(height)}] ` +
+        `/Resources << /Font << /F1 ${fontRef} 0 R /F2 ${fontRef + 1} 0 R >> >> ` +
+        `/Contents ${pageRef(index) + 1} 0 R >>`,
+    );
+    objects.push(
+      `<< /Length ${latin1Bytes(content).length} >>\nstream\n${content}\nendstream`,
+    );
+  }
+
+  objects.push(
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
-    `<< /Title (${escapeText(doc.title)}) /Producer (IOL Power Calculator Assistant) >>`,
-  ];
+    `<< /Title (${escapeText(title)}) /Producer (IOL Power Calculator Assistant) >>`,
+  );
 
   const bytes: number[] = [];
   const push = (value: string) => bytes.push(...latin1Bytes(value));
@@ -121,7 +157,7 @@ export function buildPdf(doc: PdfDocument): Uint8Array {
     push(`${offset.toString().padStart(10, "0")} 00000 n \n`);
   }
   push(
-    `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R /Info ${objects.length} 0 R >>\n` +
+    `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R /Info ${infoRef} 0 R >>\n` +
       `startxref\n${xrefOffset}\n%%EOF\n`,
   );
 

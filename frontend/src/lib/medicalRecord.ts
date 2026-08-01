@@ -1,7 +1,15 @@
 import type { IolTableRow } from "./api";
 import type { EyeRowState } from "./eyeRow";
 import { STRINGS, type Lang, type Strings } from "./i18n";
-import { A4_HEIGHT, A4_WIDTH, buildPdf, type PdfDocument, type PdfRule, type PdfText } from "./pdf";
+import {
+  A4_HEIGHT,
+  A4_WIDTH,
+  buildPdf,
+  buildPdfPages,
+  type PdfDocument,
+  type PdfRule,
+  type PdfText,
+} from "./pdf";
 import type { EyeSide } from "./types";
 
 /**
@@ -165,6 +173,20 @@ export function buildMedicalRecordDocument(input: MedicalRecordInput): PdfDocume
 
 export function buildMedicalRecordPdf(input: MedicalRecordInput): Uint8Array {
   return buildPdf(buildMedicalRecordDocument(input));
+}
+
+/**
+ * A day's batch as one file, a page per patient, in the order they were
+ * uploaded — thirty separate downloads would be unusable.
+ */
+export function buildCombinedRecordPdf(inputs: MedicalRecordInput[]): Uint8Array {
+  const t = STRINGS[inputs[0]?.lang ?? "en"];
+  return buildPdfPages(t.pdfTitle, inputs.map(buildMedicalRecordDocument));
+}
+
+export function combinedRecordFileName(inputs: MedicalRecordInput[]): string {
+  const date = (inputs[0]?.recordedAt ?? new Date()).toISOString().slice(0, 10);
+  return `iol-records-${date}-${inputs.length}-patients.pdf`;
 }
 
 export function medicalRecordFileName(input: MedicalRecordInput): string {

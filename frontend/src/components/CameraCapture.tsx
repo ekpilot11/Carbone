@@ -4,11 +4,13 @@ import type { Strings } from "../lib/i18n";
 interface CameraCaptureProps {
   t: Strings;
   onCapture: (blob: Blob) => void;
+  /** Called instead of onCapture when several photos are picked at once. */
+  onCaptureMany?: (files: File[]) => void;
   previewUrl: string | null;
   busy: boolean;
 }
 
-export function CameraCapture({ t, onCapture, previewUrl, busy }: CameraCaptureProps) {
+export function CameraCapture({ t, onCapture, onCaptureMany, previewUrl, busy }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [streaming, setStreaming] = useState(false);
@@ -53,8 +55,11 @@ export function CameraCapture({ t, onCapture, previewUrl, busy }: CameraCaptureP
   }
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) onCapture(file);
+    const files = [...(e.target.files ?? [])];
+    // A day's worth of photos in one go means one patient per file; a single
+    // file stays on the one-patient path.
+    if (files.length > 1 && onCaptureMany) onCaptureMany(files);
+    else if (files[0]) onCapture(files[0]);
     e.target.value = "";
   }
 
@@ -90,7 +95,7 @@ export function CameraCapture({ t, onCapture, previewUrl, busy }: CameraCaptureP
           <input
             type="file"
             accept="image/*"
-            capture="environment"
+            multiple={onCaptureMany !== undefined}
             onChange={handleFile}
             disabled={busy}
           />
@@ -98,6 +103,7 @@ export function CameraCapture({ t, onCapture, previewUrl, busy }: CameraCaptureP
       </div>
 
       {busy && <p className="hint">{t.captureBusy}</p>}
+      {onCaptureMany && !busy && <p className="hint">{t.batchUploadHint}</p>}
     </div>
   );
 }

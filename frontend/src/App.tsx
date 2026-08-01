@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
+import { BatchPanel } from "./components/BatchPanel";
 import { CameraCapture } from "./components/CameraCapture";
 import {
   calculateBarrett,
@@ -112,6 +113,8 @@ function App() {
   // Filled from the photo when the name is legible, and editable either
   // way. It heads the PDF record and is never sent to the calculator.
   const [patientName, setPatientName] = useState("");
+  // A day's photos, one patient each. Set by picking several files at once.
+  const [batchFiles, setBatchFiles] = useState<File[] | null>(null);
 
   const eyeTitles = useMemo<Record<EyeSide, string>>(
     () => ({ OD: t.eyeOd, OS: t.eyeOs }),
@@ -447,7 +450,18 @@ function App() {
       </header>
 
       <section className="scans">
-        <CameraCapture t={t} onCapture={handleScan} previewUrl={preview} busy={scanBusy} />
+        <CameraCapture
+          t={t}
+          onCapture={handleScan}
+          onCaptureMany={(files) => {
+            setBatchFiles(files);
+            setResult(null);
+            setSubmitted(null);
+            setScanMessage(null);
+          }}
+          previewUrl={batchFiles ? null : preview}
+          busy={scanBusy}
+        />
       </section>
 
       {scanMessage && <p className="scan-message">{scanMessage}</p>}
@@ -460,7 +474,7 @@ function App() {
 
       <section className="review">
         <h2>{t.reviewTitle}</h2>
-        <p className="hint">{t.reviewHint}</p>
+        {!batchFiles && <p className="hint">{t.reviewHint}</p>}
         <div className="lens-row">
           <label className="field lens-field">
             <span>{t.lensLabel}</span>
@@ -518,24 +532,38 @@ function App() {
               ? t.lensNamedNote(lens)
               : `${t.lensNamedNote(lens)} ${t.lensConstantsUnknown(lens)}`}
         </p>
-        <div className="eye-forms">
-          <EyeForm
-            t={t}
-            row={rows.OD}
-            title={eyeTitles.OD}
-            onChange={updateField}
-            onClear={clearEye}
-          />
-          <EyeForm
-            t={t}
-            row={rows.OS}
-            title={eyeTitles.OS}
-            onChange={updateField}
-            onClear={clearEye}
-          />
-        </div>
+        {!batchFiles && (
+          <div className="eye-forms">
+            <EyeForm
+              t={t}
+              row={rows.OD}
+              title={eyeTitles.OD}
+              onChange={updateField}
+              onClear={clearEye}
+            />
+            <EyeForm
+              t={t}
+              row={rows.OS}
+              title={eyeTitles.OS}
+              onChange={updateField}
+              onClear={clearEye}
+            />
+          </div>
+        )}
       </section>
 
+      {batchFiles && (
+        <BatchPanel
+          t={t}
+          lang={lang}
+          files={batchFiles}
+          settings={settings}
+          kIndex={kIndex}
+          onClose={() => setBatchFiles(null)}
+        />
+      )}
+
+      {!batchFiles && (
       <section className="actions">
         <button type="button" onClick={handleCalculate} disabled={!canCalculate || calculating}>
           {calculating
@@ -553,15 +581,16 @@ function App() {
         {planProblem && <p className="hint">{planProblem}</p>}
         {calculating && <p className="hint">{t.cloudflareHint}</p>}
       </section>
+      )}
 
-      {calcError && (
+      {!batchFiles && calcError && (
         <section className="error-box">
           <p>{calcError}</p>
           <p className="hint">{t.calcErrorHint}</p>
         </section>
       )}
 
-      {result && (
+      {!batchFiles && result && (
         <section className="results">
           <h2>{t.resultsTitle}</h2>
           {result.warning && <p className="scan-message">{result.warning}</p>}
