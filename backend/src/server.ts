@@ -74,10 +74,23 @@ app.post("/api/calculate", async (req, res) => {
 });
 
 app.get("/healthz", (_req, res) => {
-  res.json({ ok: true });
+  res.json({ ok: true, visionScanning: visionConfigured() });
 });
 
 const port = Number(process.env.PORT) || 4000;
 app.listen(port, () => {
   console.log(`Backend listening on :${port}`);
+  // Printed at startup because a missing key otherwise shows up only as a
+  // silently worse scan, which is impossible to diagnose from the UI.
+  if (visionConfigured()) {
+    console.log(`Photo scanning: ENABLED (${process.env.SCAN_MODEL ?? "claude-opus-5"})`);
+  } else {
+    console.log(
+      "Photo scanning: DISABLED — no ANTHROPIC_API_KEY in this process's environment.\n" +
+        "  Photos will be read on-device instead, which reads faded printouts poorly.\n" +
+        "  PowerShell: set the key and start the server in the SAME window:\n" +
+        '    $env:ANTHROPIC_API_KEY="sk-ant-..."\n' +
+        "    npm run dev",
+    );
+  }
 });

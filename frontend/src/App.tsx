@@ -64,6 +64,7 @@ function App() {
     biometry: Map<EyeSide, BiometryReading>;
     bestText: string;
     warning?: string;
+    usedFallback: boolean;
   }> {
     const keratometry = new Map<EyeSide, KeratometryReading>();
     const biometry = new Map<EyeSide, BiometryReading>();
@@ -90,7 +91,7 @@ function App() {
           });
         }
       }
-      return { keratometry, biometry, bestText: "", warning: result.warning };
+      return { keratometry, biometry, bestText: "", warning: result.warning, usedFallback: false };
     } catch (err) {
       if (!(err instanceof ScanUnavailableError)) throw err;
     }
@@ -113,7 +114,7 @@ function App() {
         if (biometry.size === 2) break;
       }
     }
-    return { keratometry, biometry, bestText };
+    return { keratometry, biometry, bestText, usedFallback: true };
   }
 
   async function handleScan(kind: ScanKind, blob: Blob) {
@@ -122,15 +123,21 @@ function App() {
     setPreviews((prev) => ({ ...prev, [kind]: URL.createObjectURL(blob) }));
     setOcrBusy((prev) => ({ ...prev, [kind]: true }));
     try {
-      const { keratometry, biometry, bestText, warning } = await readPhoto(kind, blob);
+      const { keratometry, biometry, bestText, warning, usedFallback } = await readPhoto(kind, blob);
+
+      // Falling back is a much weaker reader, so say so rather than letting
+      // a degraded scan look like a normal one.
+      const fallbackNote = usedFallback
+        ? "Read on this device — the server has no vision model configured (ANTHROPIC_API_KEY), so accuracy is much lower. Check every value."
+        : null;
 
       const found = kind === "topography" ? keratometry : biometry;
       if (found.size === 0) {
-        setScanMessage(
+        const advice =
           kind === "topography"
             ? "Couldn't read the K values from that photo. Move closer so the numbers fill the frame, hold the paper flat and well-lit, then retake — or type the values in below."
-            : "Couldn't read the AL/ACD values from that photo. Move closer so the printout fills the frame, hold it flat and well-lit, then retake — or type the values in below.",
-        );
+            : "Couldn't read the AL/ACD values from that photo. Move closer so the printout fills the frame, hold it flat and well-lit, then retake — or type the values in below.";
+        setScanMessage(fallbackNote ? `${fallbackNote} ${advice}` : advice);
         setFailedOcrText(bestText.trim() || "(nothing readable)");
         return;
       }
@@ -148,6 +155,7 @@ function App() {
 
       const missing = (["OD", "OS"] as const).filter((side) => !found.has(side));
       const notes: string[] = [];
+      if (fallbackNote) notes.push(fallbackNote);
       if (warning) notes.push(warning);
       if (missing.length === 1) {
         const readSide = [...found.keys()][0];
