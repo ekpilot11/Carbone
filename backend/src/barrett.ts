@@ -388,16 +388,28 @@ async function extractResults(
  * calc.apacrs.org sits behind Cloudflare bot protection (confirmed by an
  * inspect run that received the "Just a moment..." Turnstile challenge).
  * This automation deliberately does NOT try to evade that protection.
- * Instead it runs a visible browser window by default: when Cloudflare
- * shows its verification, the clinician completes it by hand — a real
- * human, present at the machine — and the automation carries on filling
- * the form once the calculator appears. Set BARRETT_HEADLESS=1 to force
- * the old invisible mode (it will fail whenever Cloudflare challenges).
+ * Runs start in an invisible browser; when Cloudflare challenges — it's
+ * intermittent — the run restarts in a visible window so the clinician can
+ * complete the verification by hand (a real human, present at the
+ * machine), and the automation carries on once the calculator appears.
+ * Set BARRETT_HEADLESS=1 to forbid the visible fallback (challenged runs
+ * then fail with a clear error).
  */
-const HEADLESS = process.env.BARRETT_HEADLESS === "1";
+const HEADLESS_ONLY = process.env.BARRETT_HEADLESS === "1";
 
 /** How long the clinician gets to complete Cloudflare's check in the visible window. */
 const CHALLENGE_WAIT_MS = 180000;
+
+/** Raised when the invisible attempt hits Cloudflare, to trigger the visible retry. */
+class CloudflareChallengedError extends Error {
+  constructor() {
+    super(
+      "calc.apacrs.org is showing its Cloudflare security check, which an invisible browser " +
+        "cannot pass. Unset BARRETT_HEADLESS to allow the visible-window fallback where the " +
+        "check can be completed by hand.",
+    );
+  }
+}
 
 async function isChallengePage(page: Page): Promise<boolean> {
   const title = await page.title().catch(() => "");
@@ -410,7 +422,25 @@ async function isChallengePage(page: Page): Promise<boolean> {
 }
 
 export async function runBarrettCalculation(request: CalculateRequest): Promise<CalculateResponse> {
-  const browser = await chromium.launch({ headless: HEADLESS });
+  try {
+    return await attemptCalculation(request, true);
+  } catch (err) {
+    if (err instanceof CloudflareChallengedError && !HEADLESS_ONLY) {
+      console.log(
+        "Cloudflare challenged the invisible browser — retrying in a visible window. " +
+          "Click the verification checkbox when it appears.",
+      );
+      return await attemptCalculation(request, false);
+    }
+    throw err;
+  }
+}
+
+async function attemptCalculation(
+  request: CalculateRequest,
+  headless: boolean,
+): Promise<CalculateResponse> {
+  const browser = await chromium.launch({ headless });
   try {
     const page = await browser.newPage();
 
@@ -426,12 +456,8 @@ export async function runBarrettCalculation(request: CalculateRequest): Promise<
 
     let formRoot = await findFormRoot(page, 15000);
     if (!formRoot && (await isChallengePage(page))) {
-      if (HEADLESS) {
-        throw new Error(
-          `calc.apacrs.org is showing its Cloudflare security check, which an invisible browser ` +
-            `cannot pass. Run the backend without BARRETT_HEADLESS so a visible browser window ` +
-            `opens and the verification can be completed by hand.`,
-        );
+      if (headless) {
+        throw new CloudflareChallengedError();
       }
       // Visible window: give the clinician time to click the verification.
       console.log(

@@ -43,11 +43,11 @@ The automation was verified end-to-end against the live calculator: an
 automated run returned IOL Power tables identical to a manual run with the
 same inputs. Two operational notes:
 
-- `calc.apacrs.org` sits behind Cloudflare bot protection. The automation
-  opens a **visible** browser window and, when Cloudflare shows its
-  verification, the person at the machine completes it by hand — this
-  project deliberately does not evade bot protection. See
-  [`backend/README.md`](backend/README.md).
+- `calc.apacrs.org` sits behind Cloudflare bot protection. Runs are
+  invisible by default; when Cloudflare challenges (intermittently), a
+  **visible** browser window opens so the person at the machine can
+  complete the verification by hand — this project deliberately does not
+  evade bot protection. See [`backend/README.md`](backend/README.md).
 - If the site's form layout ever changes and runs start failing, re-pin
   the selectors with `npm run inspect` per the backend README, and fall
   back to the app's "Copy values" / "Open calculator manually" buttons

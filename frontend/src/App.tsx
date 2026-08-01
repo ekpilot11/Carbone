@@ -184,9 +184,9 @@ function App() {
         {!plan.ok && <p className="hint">{plan.reason}</p>}
         {calculating && (
           <p className="hint">
-            A browser window opens on the computer running the backend. If it shows a security
-            check ("Verify you are human"), click it — the calculation continues automatically once
-            the calculator loads.
+            Usually nothing else is needed. If the calculator site asks for a security check, a
+            browser window opens on the computer running the backend — click "Verify you are human"
+            there and the calculation continues automatically.
           </p>
         )}
       </section>

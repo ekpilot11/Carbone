@@ -68,19 +68,20 @@ Environment: `PORT` (default `4000`).
   with a 4xx/5xx status.
 - `GET /healthz` — liveness check.
 
-## Cloudflare bot protection — why a browser window opens
+## Cloudflare bot protection — why a browser window sometimes opens
 
 An inspect run confirmed `calc.apacrs.org` sits behind Cloudflare bot
 protection (the "Just a moment..." Turnstile page). This project
-deliberately does **not** try to evade that protection. Instead the
-automation runs a **visible** browser window by default: when Cloudflare
-shows its verification, the person at the machine completes it by hand,
-and the automation continues on its own once the calculator loads (it
-waits up to 3 minutes). The challenge is intermittent — many runs won't
-show it at all. Set `BARRETT_HEADLESS=1` to force the old invisible mode;
-it will fail with a clear error whenever Cloudflare challenges. If truly
-unattended automation is ever needed, ask APACRS about sanctioned
-programmatic access rather than working around their protection.
+deliberately does **not** try to evade that protection. Runs start in an
+invisible browser; when Cloudflare challenges (it's intermittent), the run
+automatically restarts in a **visible** window so the person at the
+machine can complete the verification by hand, and the automation
+continues on its own once the calculator loads (it waits up to 3
+minutes). Most runs never show a window at all. Set `BARRETT_HEADLESS=1`
+to forbid the visible fallback; challenged runs then fail with a clear
+error. If truly unattended automation is ever needed, ask APACRS about
+sanctioned programmatic access rather than working around their
+protection.
 
 ## Notes
 
