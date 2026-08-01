@@ -1,7 +1,16 @@
 import { useState } from "react";
 import "./App.css";
 import { CameraCapture } from "./components/CameraCapture";
-import { calculateBarrett, type CalculateResponse, type IolTableRow } from "./lib/api";
+import {
+  calculateBarrett,
+  scanPhoto,
+  ScanUnavailableError,
+  type CalculateResponse,
+  type IolTableRow,
+  type ScannedBiometry,
+  type ScannedKeratometry,
+} from "./lib/api";
+import { prepareImage } from "./lib/imagePrep";
 import {
   applyBiometry,
   applyKeratometry,
@@ -42,34 +51,78 @@ function App() {
   const [calcError, setCalcError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  /**
+   * Reads a photo with the server-side vision model, which handles
+   * photographed thermal printouts far better than in-browser OCR. If the
+   * server has no model configured, falls back to the on-device reader.
+   */
+  async function readPhoto(
+    kind: ScanKind,
+    blob: Blob,
+  ): Promise<{
+    keratometry: Map<EyeSide, KeratometryReading>;
+    biometry: Map<EyeSide, BiometryReading>;
+    bestText: string;
+    warning?: string;
+  }> {
+    const keratometry = new Map<EyeSide, KeratometryReading>();
+    const biometry = new Map<EyeSide, BiometryReading>();
+
+    try {
+      const { base64, mediaType } = await prepareImage(blob);
+      const result = await scanPhoto(kind, base64, mediaType);
+      for (const reading of result.readings) {
+        if (kind === "topography") {
+          const k = reading as ScannedKeratometry;
+          keratometry.set(k.side, {
+            side: k.side,
+            k1: k.k1,
+            k2: k.k2,
+            cylinder: Number((k.k2 - k.k1).toFixed(2)),
+          });
+        } else {
+          const b = reading as ScannedBiometry;
+          biometry.set(b.side, {
+            side: b.side,
+            sideSource: "marker",
+            axialLength: b.axialLength,
+            acd: b.acd,
+          });
+        }
+      }
+      return { keratometry, biometry, bestText: "", warning: result.warning };
+    } catch (err) {
+      if (!(err instanceof ScanUnavailableError)) throw err;
+    }
+
+    // On-device fallback: each image treatment reads different parts of a
+    // faded printout, so keep the first good reading per eye and stop once
+    // both eyes are covered.
+    let bestText = "";
+    for await (const text of recognizeVariants(blob)) {
+      if (text.trim().length > bestText.trim().length) bestText = text;
+      if (kind === "topography") {
+        for (const reading of parseTopographyText(text)) {
+          if (!keratometry.has(reading.side)) keratometry.set(reading.side, reading);
+        }
+        if (keratometry.size === 2) break;
+      } else {
+        for (const reading of parseBiometryText(text)) {
+          if (!biometry.has(reading.side)) biometry.set(reading.side, reading);
+        }
+        if (biometry.size === 2) break;
+      }
+    }
+    return { keratometry, biometry, bestText };
+  }
+
   async function handleScan(kind: ScanKind, blob: Blob) {
     setScanMessage(null);
     setFailedOcrText(null);
     setPreviews((prev) => ({ ...prev, [kind]: URL.createObjectURL(blob) }));
     setOcrBusy((prev) => ({ ...prev, [kind]: true }));
     try {
-      // Each image treatment reads different parts of a faded printout, so
-      // keep the first good reading found for each eye and stop once both
-      // eyes are covered.
-      const keratometry = new Map<EyeSide, KeratometryReading>();
-      const biometry = new Map<EyeSide, BiometryReading>();
-      let bestText = "";
-
-      for await (const text of recognizeVariants(blob)) {
-        if (text.trim().length > bestText.trim().length) bestText = text;
-
-        if (kind === "topography") {
-          for (const reading of parseTopographyText(text)) {
-            if (!keratometry.has(reading.side)) keratometry.set(reading.side, reading);
-          }
-          if (keratometry.size === 2) break;
-        } else {
-          for (const reading of parseBiometryText(text)) {
-            if (!biometry.has(reading.side)) biometry.set(reading.side, reading);
-          }
-          if (biometry.size === 2) break;
-        }
-      }
+      const { keratometry, biometry, bestText, warning } = await readPhoto(kind, blob);
 
       const found = kind === "topography" ? keratometry : biometry;
       if (found.size === 0) {
@@ -95,6 +148,7 @@ function App() {
 
       const missing = (["OD", "OS"] as const).filter((side) => !found.has(side));
       const notes: string[] = [];
+      if (warning) notes.push(warning);
       if (missing.length === 1) {
         const readSide = [...found.keys()][0];
         notes.push(`Only ${readSide} could be read — enter ${missing[0]} by hand.`);
@@ -111,9 +165,13 @@ function App() {
         );
       }
       setScanMessage(notes.length > 0 ? notes.join(" ") : null);
-      if (notes.length > 0) setFailedOcrText(bestText.trim());
-    } catch {
-      setScanMessage("Scanning failed on that photo. You can retake it or type the values in below.");
+      if (notes.length > 0 && bestText.trim()) setFailedOcrText(bestText.trim());
+    } catch (err) {
+      setScanMessage(
+        err instanceof Error
+          ? `${err.message} You can retake the photo or type the values in below.`
+          : "Scanning failed on that photo. You can retake it or type the values in below.",
+      );
     } finally {
       setOcrBusy((prev) => ({ ...prev, [kind]: false }));
     }
@@ -164,24 +222,24 @@ function App() {
         <p className="disclaimer">
           This tool only helps enter scanned biometry/topography values into the Barrett Universal II
           calculator faster. It does not replace clinical judgment. <strong>Always verify every value —
-          especially anything read by OCR — and confirm the final IOL power on the official calculator
-          before using it in surgical planning.</strong> Patient-identifying information (name, ID, date of
-          birth, etc.) is never read, stored, or transmitted by this app — only the numeric clinical values
-          you confirm below.
+          especially anything read from a photo — and confirm the final IOL power on the official
+          calculator before using it in surgical planning.</strong> Photos are read by a vision model,
+          which means <strong>the image is sent off this machine</strong> — frame the shot on the
+          measurement block, not the patient's details. Nothing is stored or logged.
         </p>
       </header>
 
       <section className="scans">
         <CameraCapture
           label="1. Corneal topography / K readings"
-          hint="Photograph the printed Sim K's strip (or printed K1/K2 values) so the numbers fill the frame — close, flat, well-lit. Handwriting usually can't be read."
+          hint="Photograph the Sim K's strip (or labeled K1/K2 values) so the numbers fill the frame. Avoid including the patient's name or ID in the shot."
           onCapture={(blob) => handleScan("topography", blob)}
           previewUrl={previews.topography}
           busy={ocrBusy.topography}
         />
         <CameraCapture
           label="2. Biometry (AL / ACD)"
-          hint="Photograph the A-scan printout (AVGAXL, ACD, LENS, VITR) so it fills the frame — close, flat, well-lit."
+          hint="Photograph the A-scan printout (AVGAXL, ACD, LENS, VITR) so it fills the frame. Avoid including the patient's name or ID in the shot."
           onCapture={(blob) => handleScan("biometry", blob)}
           previewUrl={previews.biometry}
           busy={ocrBusy.biometry}

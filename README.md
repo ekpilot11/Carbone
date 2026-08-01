@@ -15,27 +15,51 @@ app enforces a manual review step before any calculation runs, and always
 shows a manual fallback (copy values / open the calculator yourself) in
 case the automation fails.
 
-## Privacy
+## ⚠️ Privacy — photos leave the device when scanning is enabled
 
-Biometry/topography photos are OCR'd **entirely in the browser** (via
-Tesseract.js) — the images themselves are never uploaded anywhere. Only the
-confirmed numeric clinical values (K1/K2, axial length, ACD, IOL
-model/constant, target refraction) are sent to the backend, which discards
-them once the calculation completes; nothing is logged or persisted.
-Patient-identifying information (name, ID, date of birth, address, etc.)
-that may appear elsewhere on a printout is never read or transmitted by
-this app — keep those photos off any device/session you don't control, and
-handle them per your clinic's data protection policy (e.g. LGPD in Brazil).
+**Read this before pointing the app at real patients.**
+
+Photos are read by a vision model through the Anthropic API. **The
+photograph is transmitted off the clinician's machine.** In-browser OCR
+could not read photographed thermal printouts reliably, and this was the
+deliberate trade made to fix that.
+
+What this means in practice:
+
+- The image is sent as it was captured. If the frame includes a patient
+  name, record number, CPF, or date of birth, **that is transmitted too.**
+  Frame the shot on the measurement block alone.
+- The prompt instructs the model to return only clinical numbers and never
+  a patient identifier, and the server validates the response against
+  physiologic ranges — but that constrains what comes *back*, not what is
+  *sent*.
+- Nothing is written to disk or logged by this app: the image is held in
+  memory for the duration of the request and discarded.
+- **Check this against your institution's data protection rules (LGPD in
+  Brazil) before clinical use.** Sending identifiable patient data to a
+  third-party processor is a decision for your institution, not one this
+  README can make for you.
+
+**To keep photos on-device instead**, leave `ANTHROPIC_API_KEY` unset. The
+app falls back to in-browser OCR (Tesseract.js) automatically — no image
+leaves the machine, at the cost of much weaker reading of faded printouts;
+expect to type more values by hand.
+
+Either way, the confirmed numeric values (K1/K2, axial length, ACD, target
+refraction) are sent to the Barrett calculator to compute IOL power, and
+nothing is persisted anywhere.
 
 ## Architecture
 
 - **`frontend/`** — React + Vite app. Camera capture (live `getUserMedia`
-  view or native photo upload), client-side OCR, regex-based parsing of the
-  two printout formats into structured values, an editable review form, and
-  the results view.
-- **`backend/`** — Express server with a Playwright automation
-  (`POST /api/calculate`) that fills the confirmed values into the Barrett
-  Universal II calculator and scrapes back the results.
+  view or native photo upload), image downscaling, an editable review form,
+  and the results view. Carries the on-device OCR fallback (Tesseract.js
+  plus format-specific parsers) used when no vision model is configured.
+- **`backend/`** — Express server with two routes: `POST /api/scan` reads a
+  photographed printout with a vision model and returns range-validated
+  values, and `POST /api/calculate` drives a Playwright automation that
+  fills those values into the Barrett Universal II calculator and scrapes
+  back the results.
 
 ## Status: verified working (2026-08-01)
 
@@ -60,8 +84,16 @@ same inputs. Two operational notes:
 ```bash
 cd backend
 npm install   # also downloads a Chromium build for Playwright
+
+# Optional — enables vision-model photo scanning. Leave unset to keep photos
+# on-device (weaker reading; see the privacy section above).
+export ANTHROPIC_API_KEY=sk-ant-...
+
 npm run dev   # listens on :4000
 ```
+
+Get an API key from [console.anthropic.com](https://console.anthropic.com).
+Scanning costs a few cents per photo.
 
 See [`backend/README.md`](backend/README.md) for selector verification and
 deployment notes.

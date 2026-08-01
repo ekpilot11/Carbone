@@ -1,4 +1,4 @@
-import type { EyeInput } from "./types";
+import type { EyeInput, EyeSide } from "./types";
 
 /** At least one eye must be present; a single eye calculates that side only. */
 export interface CalculateRequest {
@@ -28,6 +28,49 @@ export interface CalculateResponse {
 // set VITE_API_BASE_URL to override when frontend and backend are hosted
 // on different origins.
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+
+export type ScanKind = "topography" | "biometry";
+
+export interface ScannedKeratometry {
+  side: EyeSide;
+  k1: number;
+  k2: number;
+}
+
+export interface ScannedBiometry {
+  side: EyeSide;
+  axialLength: number;
+  acd: number;
+}
+
+export interface ScanResponse {
+  readings: (ScannedKeratometry | ScannedBiometry)[];
+  warning?: string;
+}
+
+/** Raised when the server has no vision model configured, so the caller can fall back to on-device OCR. */
+export class ScanUnavailableError extends Error {}
+
+export async function scanPhoto(
+  kind: ScanKind,
+  imageBase64: string,
+  mediaType: string,
+): Promise<ScanResponse> {
+  const res = await fetch(`${API_BASE}/api/scan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, imageBase64, mediaType }),
+  });
+
+  if (res.status === 503) {
+    throw new ScanUnavailableError("Photo scanning is not configured on the server.");
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? `Scan failed (${res.status}).`);
+  }
+  return res.json();
+}
 
 export async function calculateBarrett(payload: CalculateRequest): Promise<CalculateResponse> {
   const res = await fetch(`${API_BASE}/api/calculate`, {

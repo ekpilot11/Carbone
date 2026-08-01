@@ -1,8 +1,31 @@
-# Backend: Barrett Universal II automation
+# Backend: photo scanning + Barrett Universal II automation
 
-Express server exposing `POST /api/calculate`, which drives a headless
-Chromium (via Playwright) to fill scanned/reviewed clinical values into
-https://calc.apacrs.org/barrett_universal2105/ and scrape back the results.
+Express server exposing two routes:
+
+- `POST /api/scan` — reads a photographed keratometry or biometry printout
+  with a vision model and returns range-validated clinical values.
+- `POST /api/calculate` — drives a headless Chromium (via Playwright) to
+  fill those values into https://calc.apacrs.org/barrett_universal2105/ and
+  scrape back the results.
+
+## Photo scanning (`POST /api/scan`)
+
+Set `ANTHROPIC_API_KEY` to enable it; without it the route returns **503**
+and the frontend silently falls back to in-browser OCR. Override the model
+with `SCAN_MODEL` (default `claude-opus-5`).
+
+**The photograph is sent to the Anthropic API** — see the privacy section of
+the root README before using this with real patients, and prefer framing the
+shot on the measurement block rather than the whole page. The image is held
+in memory for the request and never written to disk or logged.
+
+Two safeguards sit on the response, not the request: the prompt forbids
+returning patient identifiers, and every value is checked against the
+physiologic ranges in `src/ranges.ts` (K 30–60 D, AL 12–38 mm, ACD
+0.5–6 mm). Out-of-range values are dropped with a warning rather than
+passed on — a misread digit must never reach a surgical calculation. The
+K1-is-lower convention is re-applied server-side rather than trusted from
+the model.
 
 ## Field mapping — verified 2026-08-01, re-verify if the site changes
 
