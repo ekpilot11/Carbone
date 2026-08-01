@@ -12,11 +12,17 @@ Express server exposing two routes:
 ## Photo scanning (`POST /api/scan`)
 
 Body: `{ imageBase64, mediaType }` (JPEG/PNG/WebP). Returns
-`{ keratometry: [{side, k1, k2}], biometry: [{side, axialLength, acd}], warning? }`
+`{ keratometry: [{side, k1, k2}], biometry: [{side, axialLength, acd}], optional: [{side, lensThickness?, wtw?}], warning? }`
 — each array holds one entry per eye that could be read, and is empty when
 that printout isn't in the photo. A single prompt covers both formats, so
 one wide shot of the two strips side by side works, and so does a close-up
 of either one alone.
+
+`optional` mirrors the calculator's own "Optional:" block (lens thickness,
+white-to-white). It is a separate array because either value can appear
+alone, on either printout, and an eye whose axial length is unreadable can
+still contribute a legible WTW. Each optional value is range-checked on its
+own, so one implausible reading doesn't discard the other.
 
 Set `ANTHROPIC_API_KEY` to enable it; without it the route returns **503**
 and the frontend falls back to in-browser OCR (saying so in the UI).
@@ -30,7 +36,8 @@ in memory for the request and never written to disk or logged.
 Two safeguards sit on the response, not the request: the prompt forbids
 returning patient identifiers, and every value is checked against the
 physiologic ranges in `src/ranges.ts` (K 30–60 D, AL 12–38 mm, ACD
-0.5–6 mm). Out-of-range values are dropped with a warning rather than
+0.5–6 mm, lens thickness 2–8 mm, WTW 8–14 mm). Out-of-range values are
+dropped with a warning rather than
 passed on — a misread digit must never reach a surgical calculation. The
 K1-is-lower convention is re-applied server-side rather than trusted from
 the model.
@@ -90,14 +97,44 @@ Environment: `PORT` (default `4000`).
 - `POST /api/calculate` — body: `{ od?: EyeInput, os?: EyeInput }`, at
   least one eye required; a single eye calculates that side only (see
   `src/types.ts`). In single-eye runs the "Recommended IOL" match maps to
-  the requested side, and the uncalculated side's table comes back empty. `manual` holds the one clinician-entered value (target
-  refraction); `iol` holds the fixed IOL design/constants from
+  the requested side, and the uncalculated side's table comes back empty.
+  `biometry.lensThickness` / `biometry.wtw` are optional and simply skipped
+  when absent. `manual` holds the one clinician-entered value (target
+  refraction); `iol` holds the IOL design/constants from
   `src/constants.ts` (expected to be `Biconvex` / `118.4` / `1.57` for this
   practice, but still validated per-request rather than hardcoded
   server-side, so a future frontend change doesn't require a backend
-  redeploy). Returns `{ resultsText, warning? }` on success, or `{ error }`
-  with a 4xx/5xx status.
+  redeploy) plus `iol.lens`. Returns
+  `{ resultsText, recommended?, tables?, lens?, warning? }` on success, or
+  `{ error }` with a 4xx/5xx status.
+- `GET /api/lenses` — the lens dropdown's options, read off the live
+  calculator and cached for the process lifetime. Headless-only and
+  best-effort: it returns 502 when the site is unreachable or challenged,
+  and the frontend then keeps its own bundled list.
 - `GET /healthz` — liveness check.
+
+## Lens selection
+
+`iol.lens` is the exact option text of the calculator's own lens dropdown
+("Personal Constant", "Alcon SN60WF", …). The automation finds that
+`<select>` by the options it offers — it is the one containing "Personal
+Constant" — and selects the requested option before anything else is typed,
+because selecting a lens rewrites the constants boxes and can post back.
+
+Two rules keep a wrong lens from producing a plausible wrong power:
+
+- A name that doesn't match any option **aborts the run** and the error
+  lists every option the site actually offers. It never falls back to
+  another lens.
+- With a named lens, Lens Factor is **not** filled — the site's own value
+  for that lens stands. Only a "Personal Constant" run types this
+  practice's 1.57. No manufacturer constants are transcribed into this
+  codebase; whatever the site had in the box at submit time is read back
+  and returned as `lens.lensFactor`, which is the only record of what
+  actually produced the numbers.
+
+Both eyes must carry the same lens and constants — the dropdown is
+form-wide, so a mismatched request is rejected rather than half-honoured.
 
 ## Cloudflare bot protection — why a browser window sometimes opens
 
@@ -120,6 +157,9 @@ protection.
   Lens Factor is filled (the user's verified manual run shows the site
   pairing Lens Factor 1.57 with A Constant 118.4, this practice's exact
   constants). Filling both is suspected of silently blocking Calculate.
+  With a named lens neither is filled — see "Lens selection" above.
+- Lens Thickness and WTW are per-eye fields in the form's "Optional:"
+  block and are filled only when the request carries them.
 - After filling, every value is read back and compared; if anything landed
   in the wrong box the run aborts *before* clicking Calculate — a wrong box
   means a wrong surgical calculation.

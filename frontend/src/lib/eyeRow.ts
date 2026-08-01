@@ -1,5 +1,12 @@
 import { A_CONSTANT, IOL_MODEL, LENS_FACTOR } from "./constants";
-import type { BiometryReading, EyeInput, EyeSide, KeratometryReading } from "./types";
+import { isPersonalConstant } from "./lenses";
+import type {
+  BiometryReading,
+  EyeInput,
+  EyeSide,
+  KeratometryReading,
+  OptionalReading,
+} from "./types";
 
 export interface EyeRowState {
   side: EyeSide;
@@ -9,7 +16,9 @@ export interface EyeRowState {
   k2: string;
   axialLength: string;
   acd: string;
+  /** The calculator's "Optional:" block — blank is a valid, complete answer. */
   lensThickness: string;
+  wtw: string;
   targetRefraction: string;
 }
 
@@ -21,6 +30,7 @@ export function emptyRow(side: EyeSide): EyeRowState {
     axialLength: "",
     acd: "",
     lensThickness: "",
+    wtw: "",
     // This practice always targets emmetropia; kept as an explicit, editable 0.
     targetRefraction: "0",
   };
@@ -35,15 +45,28 @@ export function applyKeratometry(row: EyeRowState, reading: KeratometryReading):
 }
 
 /**
- * Lens thickness is deliberately left for manual entry: it is optional on
- * the calculator and is not filled from the scan, so whatever the
- * clinician typed stays untouched.
+ * The optional fields never come from here: an A-scan's own LENS line is
+ * read separately (see applyOptional) so that a biometry block without one
+ * cannot blank out a value the clinician typed.
  */
 export function applyBiometry(row: EyeRowState, reading: BiometryReading): EyeRowState {
   return {
     ...row,
     axialLength: reading.axialLength.toFixed(2),
     acd: reading.acd.toFixed(2),
+  };
+}
+
+/**
+ * Fills the "Optional:" fields from the scan, one at a time: whichever value
+ * the printout didn't show keeps whatever is already in the box.
+ */
+export function applyOptional(row: EyeRowState, reading: OptionalReading): EyeRowState {
+  return {
+    ...row,
+    lensThickness:
+      reading.lensThickness !== undefined ? reading.lensThickness.toFixed(2) : row.lensThickness,
+    wtw: reading.wtw !== undefined ? reading.wtw.toFixed(2) : row.wtw,
   };
 }
 
@@ -58,7 +81,7 @@ export function isRowComplete(row: EyeRowState): boolean {
  * is ignored because it defaults to "0" on purpose.
  */
 export function isRowEmpty(row: EyeRowState): boolean {
-  return [row.k1, row.k2, row.axialLength, row.acd, row.lensThickness].every(
+  return [row.k1, row.k2, row.axialLength, row.acd, row.lensThickness, row.wtw].every(
     (value) => value.trim() === "",
   );
 }
@@ -88,12 +111,16 @@ export function planCalculation(od: EyeRowState, os: EyeRowState): CalculationPl
   return { ok: true, sides };
 }
 
+function optionalNumber(value: string): number | undefined {
+  return value.trim() === "" ? undefined : Number(value);
+}
+
 /**
  * Applies the K1-is-lower convention even to hand-edited values: if the
  * clinician typed them the other way round, they're swapped rather than
  * sent through mislabeled.
  */
-export function toEyeInput(row: EyeRowState): EyeInput {
+export function toEyeInput(row: EyeRowState, lens: string): EyeInput {
   const kValues = [Number(row.k1), Number(row.k2)];
   const k1 = Math.min(...kValues);
   const k2 = Math.max(...kValues);
@@ -103,14 +130,24 @@ export function toEyeInput(row: EyeRowState): EyeInput {
     biometry: {
       axialLength: Number(row.axialLength),
       acd: Number(row.acd),
-      lensThickness: row.lensThickness.trim() === "" ? undefined : Number(row.lensThickness),
+      lensThickness: optionalNumber(row.lensThickness),
+      wtw: optionalNumber(row.wtw),
     },
     manual: { targetRefraction: Number(row.targetRefraction) },
-    iol: { iolModel: IOL_MODEL, aConstant: A_CONSTANT, lensFactor: LENS_FACTOR },
+    // The constants ride along for a personal-constant run; for a named lens
+    // the calculator supplies its own and these are ignored.
+    iol: { iolModel: IOL_MODEL, lens, aConstant: A_CONSTANT, lensFactor: LENS_FACTOR },
   };
 }
 
-export function formatRowForClipboard(row: EyeRowState): string {
+/**
+ * The manual-entry fallback. A named lens carries the calculator's own
+ * constants, so this practice's personal constants are listed only when
+ * they actually apply — copying them under a named lens would invite
+ * typing them over the site's values.
+ */
+export function formatRowForClipboard(row: EyeRowState, lens: string): string {
+  const personal = isPersonalConstant(lens);
   return [
     `${row.side}:`,
     `  Measured K1: ${row.k1 || "?"} D`,
@@ -118,9 +155,11 @@ export function formatRowForClipboard(row: EyeRowState): string {
     `  Axial Length: ${row.axialLength || "?"} mm`,
     `  Optical ACD: ${row.acd || "?"} mm`,
     row.lensThickness ? `  Lens Thickness: ${row.lensThickness} mm` : null,
+    row.wtw ? `  WTW: ${row.wtw} mm` : null,
+    `  Lens: ${lens}`,
     `  IOL Optic: ${IOL_MODEL}`,
-    `  A Constant: ${A_CONSTANT}`,
-    `  Lens Factor: ${LENS_FACTOR}`,
+    personal ? `  A Constant: ${A_CONSTANT}` : null,
+    personal ? `  Lens Factor: ${LENS_FACTOR}` : null,
     `  Refraction (target): ${row.targetRefraction || "?"} D`,
   ]
     .filter((line): line is string => line !== null)

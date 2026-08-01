@@ -22,9 +22,15 @@ function validateEye(eye: unknown, side: EyeSide): string | null {
   ) {
     return `${side}: biometry.lensThickness must be a number when present`;
   }
+  if (e.biometry?.wtw !== undefined && !isFiniteNumber(e.biometry.wtw)) {
+    return `${side}: biometry.wtw must be a number when present`;
+  }
   if (!isFiniteNumber(e.manual?.targetRefraction)) return `${side}: manual.targetRefraction must be a number`;
   if (typeof e.iol?.iolModel !== "string" || e.iol.iolModel.trim() === "") {
     return `${side}: iol.iolModel must be a non-empty string`;
+  }
+  if (e.iol?.lens !== undefined && (typeof e.iol.lens !== "string" || e.iol.lens.trim() === "")) {
+    return `${side}: iol.lens must be a non-empty string when present`;
   }
   if (!isFiniteNumber(e.iol?.aConstant)) return `${side}: iol.aConstant must be a number`;
   if (!isFiniteNumber(e.iol?.lensFactor)) return `${side}: iol.lensFactor must be a number`;
@@ -38,8 +44,22 @@ export function validateCalculateRequest(body: unknown): string | null {
   if (req.od === undefined && req.os === undefined) {
     return "Request must include at least one eye (od or os)";
   }
-  return (
+  const perEye =
     (req.od !== undefined ? validateEye(req.od, "OD") : null) ??
-    (req.os !== undefined ? validateEye(req.os, "OS") : null)
-  );
+    (req.os !== undefined ? validateEye(req.os, "OS") : null);
+  if (perEye) return perEye;
+
+  // The lens dropdown and its constants are form-wide on the calculator, so
+  // two eyes asking for different lenses cannot both be honoured — better to
+  // refuse than to silently calculate one of them with the other's lens.
+  if (req.od && req.os) {
+    const same =
+      req.od.iol.lens === req.os.iol.lens &&
+      req.od.iol.aConstant === req.os.iol.aConstant &&
+      req.od.iol.lensFactor === req.os.iol.lensFactor;
+    if (!same) {
+      return "Both eyes must use the same lens and constants — the calculator applies one selection to the whole form";
+    }
+  }
+  return null;
 }

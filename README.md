@@ -2,10 +2,12 @@
 
 Photograph the ophthalmology exam printouts once — keratometry strip and
 A-scan biometry together — and a vision model reads the keratometry (K1/K2)
-and biometry (axial length, ACD) for both eyes. After you review and
-complete the remaining clinical inputs, the app drives the
+and biometry (axial length, ACD, plus lens thickness and WTW when they're
+printed) for both eyes. After you review and complete the remaining
+clinical inputs, the app drives the
 [Barrett Universal II calculator](https://calc.apacrs.org/barrett_universal2105/)
-to compute IOL power recommendations for cataract surgery.
+to compute IOL power recommendations for cataract surgery, and can save the
+whole thing as a PDF record.
 
 ## ⚠️ Medical disclaimer
 
@@ -56,14 +58,39 @@ nothing is persisted anywhere.
 
 - **`frontend/`** — React + Vite app. A single camera capture (live
   `getUserMedia` view or native photo upload), image downscaling, an
-  editable review form, and the results view. Carries the on-device OCR
-  fallback (Tesseract.js plus format-specific parsers) used when no vision
-  model is configured.
-- **`backend/`** — Express server with two routes: `POST /api/scan` reads
-  one photograph of the printouts with a vision model and returns
-  range-validated values for both eyes, and `POST /api/calculate` drives a
-  Playwright automation that fills those values into the Barrett Universal
-  II calculator and scrapes back the results.
+  editable review form laid out like the calculator's own (measurements,
+  then its "Optional:" block), the results view, and the PDF record.
+  Carries the on-device OCR fallback (Tesseract.js plus format-specific
+  parsers) used when no vision model is configured.
+- **`backend/`** — Express server: `POST /api/scan` reads one photograph of
+  the printouts with a vision model and returns range-validated values for
+  both eyes, `POST /api/calculate` drives a Playwright automation that
+  fills those values into the Barrett Universal II calculator and scrapes
+  back the results, and `GET /api/lenses` reads the calculator's lens list
+  so the app's dropdown matches the site exactly.
+
+## Lens choice
+
+The lens dropdown mirrors the calculator's own "Personal Constant" menu.
+Picking a lens here makes the automation pick the same option on the site,
+so **the site applies that lens's constants itself** — no manufacturer
+A-constants are stored in this app, where they could quietly go out of
+date. "Personal Constant" (the default) is the one case where this
+practice's own A-Constant 118.4 / Lens Factor 1.57 are sent. Whichever was
+used is read back off the page and shown with the results.
+
+If a lens name ever stops matching the site's list, the run stops and the
+error names every option the site offers — it never silently substitutes a
+different lens.
+
+## Medical record (PDF)
+
+After a calculation, the results view offers a one-page PDF holding K1/K2,
+axial length, ACD, the optional values, the lens and constants used, and
+each eye's IOL power table with the option closest to plano marked. The
+patient's name is typed in for the record — the scan deliberately refuses
+to read identifiers off the photograph — and **the PDF is built and saved
+entirely in the browser**, so nothing in it is transmitted anywhere.
 
 ## Status: verified working (2026-08-01)
 

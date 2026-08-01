@@ -33,8 +33,17 @@ export interface BiometryReading {
   acd: number;
   /** Lens thickness, in mm, when available. */
   lensThickness?: number;
+  /** White-to-white corneal diameter, in mm, when available. */
+  wtw?: number;
   /** Vitreous depth, in mm, when available. */
   vitreousDepth?: number;
+}
+
+/** The calculator's "Optional:" block — either value can be present alone. */
+export interface OptionalReading {
+  side: EyeSide;
+  lensThickness?: number;
+  wtw?: number;
 }
 
 /** The only field a clinician must still supply by hand; not present on any scanned printout. */
@@ -43,9 +52,15 @@ export interface ManualEyeInput {
   targetRefraction: number;
 }
 
-/** IOL fields fixed for this practice — see lib/constants.ts. Sent with every request. */
+/** IOL fields sent with every request — see lib/constants.ts and lib/lenses.ts. */
 export interface FixedIolInput {
   iolModel: string;
+  /**
+   * The calculator's lens dropdown, by its exact option text. "Personal
+   * Constant" means the two constants below apply; any other lens carries
+   * its own, which the calculator itself fills in.
+   */
+  lens: string;
   aConstant: number;
   lensFactor: number;
 }
@@ -53,7 +68,7 @@ export interface FixedIolInput {
 export interface EyeInput {
   side: EyeSide;
   keratometry: Pick<KeratometryReading, "k1" | "k2">;
-  biometry: Pick<BiometryReading, "axialLength" | "acd" | "lensThickness">;
+  biometry: Pick<BiometryReading, "axialLength" | "acd" | "lensThickness" | "wtw">;
   manual: ManualEyeInput;
   iol: FixedIolInput;
 }

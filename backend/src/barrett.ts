@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium, type Frame, type Locator, type Page } from "playwright";
+import { PERSONAL_CONSTANT } from "./constants.js";
 import type { CalculateRequest, CalculateResponse, EyeInput, IolTableRow } from "./types.js";
 
 export const CALCULATOR_URL = "https://calc.apacrs.org/barrett_universal2105/";
@@ -12,11 +13,15 @@ export const CALCULATOR_URL = "https://calc.apacrs.org/barrett_universal2105/";
  * each measurement row has the label once per eye column, OD's "(R)" input
  * before OS's "(L)" in document order.
  *
- * Lens Factor and A Constant are form-wide singles and the form reads
- * "Lens Factor ... or A Constant" — they are alternatives, so only Lens
- * Factor is filled; the user's verified manual run shows the site pairing
- * Lens Factor 1.57 with A Constant 118.4, so the derived value matches
- * this practice's constants. Patient Name is required by the site before
+ * The lens dropdown, Lens Factor and A Constant are form-wide singles, and
+ * the form reads "Lens Factor ... or A Constant" — the two constants are
+ * alternatives, so only Lens Factor is filled, and only when the run uses
+ * the practice's own personal constant; the user's verified manual run
+ * shows the site pairing Lens Factor 1.57 with A Constant 118.4, so the
+ * derived value matches. Choosing a named lens instead leaves both boxes to
+ * the site, which fills them with that lens's constants — none of those
+ * constants are transcribed into this codebase, where they could go stale.
+ * Patient Name is required by the site before
  * it will render the "Recommended IOL" summary, so it is always filled
  * with a neutral "-" placeholder — never real patient data. Doctor Name
  * and Patient ID stay blank (they were blank on the successful manual run).
@@ -27,10 +32,19 @@ const PER_EYE_FIELDS = {
   k2: ["Measured K2"],
   acd: ["Optical ACD"],
   targetRefraction: ["Refraction"],
+  // The form's "Optional:" block, below the measurements.
   lensThickness: ["Lens Thickness"],
+  wtw: ["WTW", "White to White"],
 } as const;
 
 const LENS_FACTOR_LABELS = ["Lens Factor"] as const;
+
+/**
+ * The lens dropdown carries no usable label of its own, so it is found by
+ * its contents instead: it is the one <select> offering the "Personal
+ * Constant" option (the site's own name for "use the constants I typed").
+ */
+const LENS_OPTION_MARKER = /personal constant/i;
 
 /** Label text that must exist wherever the form actually renders. */
 const FORM_ANCHOR = "Axial Length";
@@ -195,6 +209,9 @@ async function fillEye(
   if (eye.biometry.lensThickness !== undefined) {
     attempts.push(["lensThickness", String(eye.biometry.lensThickness)]);
   }
+  if (eye.biometry.wtw !== undefined) {
+    attempts.push(["wtw", String(eye.biometry.wtw)]);
+  }
 
   const missing: string[] = [];
   for (const [field, value] of attempts) {
@@ -209,13 +226,117 @@ async function fillEye(
   return missing;
 }
 
+/** The lens dropdown, identified by the options it offers rather than by a label. */
+async function locateLensSelect(root: SearchRoot): Promise<Locator | null> {
+  const selects = root.locator("select");
+  const count = await selects.count().catch(() => 0);
+  for (let i = 0; i < count; i++) {
+    const select = selects.nth(i);
+    const texts = await select
+      .locator("option")
+      .allTextContents()
+      .catch(() => [] as string[]);
+    if (texts.some((text) => LENS_OPTION_MARKER.test(text))) return select;
+  }
+  return null;
+}
+
+function normaliseLensName(name: string): string {
+  return name.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+export function isPersonalConstant(lens: string | undefined): boolean {
+  return lens === undefined || normaliseLensName(lens) === normaliseLensName(PERSONAL_CONSTANT);
+}
+
+/**
+ * Picks the requested lens in the calculator's own dropdown, so the site
+ * applies that lens's constants exactly as it would for a manual run.
+ *
+ * Matching is exact after whitespace/case normalisation, and an unmatched
+ * name aborts the run listing what the site actually offers: silently
+ * falling back to another lens would return a plausible — and wrong — IOL
+ * power. Returns the option text the site has selected.
+ */
+async function selectLens(root: SearchRoot, lens: string): Promise<string> {
+  const select = await locateLensSelect(root);
+  if (!select) {
+    throw new Error(
+      `Couldn't find the calculator's lens dropdown (no <select> offering a "${PERSONAL_CONSTANT}" ` +
+        `option), so the lens "${lens}" could not be selected and nothing was submitted. Run ` +
+        `"npm run inspect" (backend/README.md) and update the selectors from its output.`,
+    );
+  }
+
+  const options = await select.locator("option").evaluateAll((nodes) =>
+    nodes.map((node) => ({
+      value: (node as HTMLOptionElement).value,
+      text: (node as HTMLOptionElement).textContent ?? "",
+    })),
+  );
+  const wanted = normaliseLensName(lens);
+  const match = options.find((option) => normaliseLensName(option.text) === wanted);
+  if (!match) {
+    throw new Error(
+      `The calculator's lens list has no option matching "${lens}", so nothing was submitted. ` +
+        `It offers: ${options.map((o) => o.text.trim()).filter(Boolean).join(" | ")}.`,
+    );
+  }
+
+  await select.selectOption(match.value);
+  // Selecting a lens makes the page write that lens's constants into the
+  // Lens Factor / A Constant boxes, sometimes via a postback — let that
+  // settle before anything else is typed, so it can't wipe the fills.
+  await select
+    .page()
+    .waitForLoadState("networkidle", { timeout: 5000 })
+    .catch(() => {});
+  return match.text.trim();
+}
+
+let cachedLensOptions: string[] | null = null;
+
+/**
+ * The lens dropdown's options, read off the live calculator so the app can
+ * offer exactly the names the site accepts (its bundled list is only a
+ * transcription). Cached for the process lifetime and headless-only: a lens
+ * list is not worth opening a Cloudflare challenge window for, so a
+ * challenged attempt just fails and the caller keeps its own list.
+ */
+export async function fetchLensOptions(): Promise<string[]> {
+  if (cachedLensOptions) return cachedLensOptions;
+
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(CALCULATOR_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+    const root = await findFormRoot(page, 15000);
+    if (!root) {
+      throw new Error(`Couldn't load the calculator form — ${await describePage(page)}`);
+    }
+    const select = await locateLensSelect(root);
+    if (!select) {
+      throw new Error(`Couldn't find the lens dropdown on the calculator page`);
+    }
+    const options = (await select.locator("option").allTextContents())
+      .map((text) => text.replace(/\s+/g, " ").trim())
+      .filter((text) => text !== "");
+    if (options.length === 0) throw new Error("The lens dropdown came back empty");
+
+    cachedLensOptions = options;
+    return options;
+  } finally {
+    await browser.close();
+  }
+}
+
 async function fillLensFactor(
   root: SearchRoot,
   request: CalculateRequest,
   filled: FilledEntry[],
 ): Promise<string[]> {
   // Only Lens Factor — see the header comment for why A Constant stays empty.
-  // Validation guarantees at least one eye; both carry the same fixed IOL.
+  // Validation guarantees at least one eye, and that both carry the same IOL.
   const anyEye = request.od ?? request.os;
   if (!anyEye) return ["lensFactor"];
   const value = String(anyEye.iol.lensFactor);
@@ -224,6 +345,18 @@ async function fillLensFactor(
   await setLocatorValue(control, value);
   filled.push({ field: "lensFactor", locator: control, expected: value });
   return [];
+}
+
+/**
+ * The Lens Factor the page holds at submit time — typed by us for a
+ * personal constant, written by the site itself for a named lens. Recorded
+ * so the results can state which constant actually produced them.
+ */
+async function readLensFactor(root: SearchRoot): Promise<string | undefined> {
+  const control = await locateByLabelText(root, LENS_FACTOR_LABELS, 0);
+  if (!control) return undefined;
+  const value = await control.inputValue().catch(() => "");
+  return value.trim() === "" ? undefined : value.trim();
 }
 
 async function fillPatientPlaceholder(root: SearchRoot, filled: FilledEntry[]): Promise<string[]> {
@@ -477,10 +610,18 @@ async function attemptCalculation(
       );
     }
 
+    // The lens goes first: picking one rewrites the constants boxes (and may
+    // post back), which would undo anything typed before it.
+    const requestedLens = (request.od ?? request.os)?.iol.lens;
+    const usePersonalConstant = isPersonalConstant(requestedLens);
+    const selectedLens = await selectLens(formRoot, requestedLens ?? PERSONAL_CONSTANT);
+
     const filled: FilledEntry[] = [];
     const missing = [
       ...(await fillPatientPlaceholder(formRoot, filled)),
-      ...(await fillLensFactor(formRoot, request, filled)),
+      // A named lens brings the manufacturer's own constants with it — typing
+      // this practice's Lens Factor over them would calculate the wrong lens.
+      ...(usePersonalConstant ? await fillLensFactor(formRoot, request, filled) : []),
       ...(request.od ? await fillEye(formRoot, request.od, 0, filled) : []),
       ...(request.os ? await fillEye(formRoot, request.os, 1, filled) : []),
     ];
@@ -504,6 +645,9 @@ async function attemptCalculation(
           `backend/README.md).`,
       );
     }
+
+    // Read the constants off the page while the form is still on screen.
+    const lensUsed = { name: selectedLens, lensFactor: await readLensFactor(formRoot) };
 
     await clickCalculate(formRoot);
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
@@ -537,7 +681,7 @@ async function attemptCalculation(
       od: request.od !== undefined,
       os: request.os !== undefined,
     });
-    return { resultsText: text, recommended: { od, os }, tables };
+    return { resultsText: text, recommended: { od, os }, tables, lens: lensUsed };
   } finally {
     await browser.close();
   }

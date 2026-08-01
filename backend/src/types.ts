@@ -10,14 +10,22 @@ export interface EyeInput {
   biometry: {
     axialLength: number;
     acd: number;
+    /** The calculator's "Optional:" block — sent only when known. */
     lensThickness?: number;
+    wtw?: number;
   };
   manual: {
     targetRefraction: number;
   };
-  /** Fixed for this practice — see constants.ts. Validated but not chosen per request. */
   iol: {
     iolModel: string;
+    /**
+     * The calculator's lens dropdown, by its exact option text. Absent (or
+     * "Personal Constant") means this practice's own constants below are
+     * used; any other lens makes the calculator supply its own constants
+     * and the values below are ignored.
+     */
+    lens?: string;
     aConstant: number;
     lensFactor: number;
   };
@@ -42,5 +50,11 @@ export interface CalculateResponse {
   recommended?: { od?: string; os?: string };
   /** The per-eye "IOL Power | Optic | Refraction" tables, when both parsed cleanly. */
   tables?: { od: IolTableRow[]; os: IolTableRow[] };
+  /**
+   * What the calculator actually had selected when Calculate was clicked,
+   * read back off the page — for a named lens these constants come from the
+   * site, not from us, so this is the only record of what was used.
+   */
+  lens?: { name: string; lensFactor?: string; aConstant?: string };
   warning?: string;
 }

@@ -189,11 +189,58 @@ button.secondary,
   gap: 0.25rem;
 }
 
-.field input {
+.field input,
+.field select {
   padding: 0.5rem;
   border: 1px solid #ccd3db;
   border-radius: 6px;
   font-size: 0.95rem;
+  background: white;
+}
+
+.lens-field {
+  max-width: 420px;
+  margin-bottom: 0.8rem;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* Mirrors the calculator's own layout: the optional values sit apart from
+   the measurements the formula requires. */
+.optional-group {
+  border-top: 1px dashed #ccd3db;
+  padding-top: 0.7rem;
+  margin-top: 0.2rem;
+}
+
+.group-title {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #5b6470;
+}
+
+.record-box {
+  margin-top: 1.2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #dde2e8;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.record-box h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.record-box .field {
+  width: min(100%, 360px);
 }
 
 .actions {

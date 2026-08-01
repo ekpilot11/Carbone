@@ -1,6 +1,6 @@
 import cors from "cors";
 import express from "express";
-import { runBarrettCalculation } from "./barrett.js";
+import { fetchLensOptions, runBarrettCalculation } from "./barrett.js";
 import { scanImage, visionConfigured } from "./scan.js";
 import type { CalculateRequest } from "./types.js";
 import { validateCalculateRequest } from "./validate.js";
@@ -64,6 +64,19 @@ app.post("/api/calculate", async (req, res) => {
       error:
         (err instanceof Error ? err.message : "Could not complete the automated calculation.") +
         " Use the app's manual fallback (copy values, open calculator manually) instead.",
+    });
+  }
+});
+
+// The lens names the live calculator offers, so the frontend's dropdown can
+// match it exactly. Best-effort: the frontend falls back to its bundled list.
+app.get("/api/lenses", async (_req, res) => {
+  try {
+    res.json({ lenses: await fetchLensOptions() });
+  } catch (err) {
+    console.error("Lens list lookup failed:", err instanceof Error ? err.message : err);
+    res.status(502).json({
+      error: err instanceof Error ? err.message : "Could not read the calculator's lens list.",
     });
   }
 });

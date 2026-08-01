@@ -29,9 +29,22 @@ export interface BiometryScan {
   acd: number;
 }
 
+/**
+ * The calculator's "Optional:" block. Kept separate from the required
+ * biometry because either value can appear on its own — printed on the
+ * A-scan, on the topography strip, or not at all — and an eye whose
+ * axial length is unreadable can still contribute a legible WTW.
+ */
+export interface OptionalScan {
+  side: "OD" | "OS";
+  lensThickness?: number;
+  wtw?: number;
+}
+
 export interface ScanResponse {
   keratometry: KeratometryScan[];
   biometry: BiometryScan[];
+  optional: OptionalScan[];
   /** Set when the model read the page but some values failed the plausibility check. */
   warning?: string;
 }
@@ -43,7 +56,7 @@ const PROMPT = `This photograph shows ophthalmology exam printouts. It may conta
 keratometry/topography strip, an A-scan biometry printout, or both — often
 side by side, and possibly alongside unrelated paperwork.
 
-Extract two sets of measurements.
+Extract three sets of measurements.
 
 KERATOMETRY (from the "Sim K's" strip, if present):
 - "<R>" marks the right eye (report as OD); "<L>" marks the left eye (report
@@ -69,10 +82,22 @@ BIOMETRY (from the A-scan printout, if present):
   the second is the left eye (OS); this device always prints the right eye
   first.
 
-For both sets: include an eye only if you can read its values confidently.
-Omit any eye or any section you cannot read — never guess or interpolate a
-digit. If the photo contains only one of the two document types, return an
-empty array for the other.
+OPTIONAL VALUES (only if they are actually printed):
+- Lens thickness, in mm (typically 3-6): the "LENS" line of the A-scan
+  summary, or a field labelled LT / Lens Thickness. Report it as
+  lensThickness. Do not confuse it with the VITR (vitreous) line.
+- White-to-white corneal diameter, in mm (typically 10.5-13): a field
+  labelled WTW, W-W, or "white to white", on either printout. Report it as
+  wtw.
+- Report one entry per eye, containing whichever of the two values that eye
+  actually shows. Omit the entry entirely when neither value is printed for
+  that eye — these are genuinely optional, and a plausible-looking number
+  invented here would silently change a surgical calculation.
+
+For all three sets: include an eye only if you can read its values
+confidently. Omit any eye or any section you cannot read — never guess or
+interpolate a digit. If the photo contains only one of the document types,
+return an empty array for the others.
 
 Report only these numbers. Do not report the patient's name, ID, record
 number, CPF, date of birth, address, or any other identifying information,
@@ -109,8 +134,23 @@ const SCHEMA = {
         additionalProperties: false,
       },
     },
+    optional: {
+      type: "array",
+      description:
+        "One entry per eye for the calculator's optional fields; omit an eye whose optional values are not printed.",
+      items: {
+        type: "object",
+        properties: {
+          side: { type: "string", enum: ["OD", "OS"] },
+          lensThickness: { type: ["number", "null"], description: "Lens thickness, mm" },
+          wtw: { type: ["number", "null"], description: "White-to-white corneal diameter, mm" },
+        },
+        required: ["side", "lensThickness", "wtw"],
+        additionalProperties: false,
+      },
+    },
   },
-  required: ["keratometry", "biometry"],
+  required: ["keratometry", "biometry", "optional"],
   additionalProperties: false,
 } as const;
 
@@ -127,8 +167,10 @@ function validate(raw: unknown): ScanResponse {
   const source = (raw ?? {}) as Record<string, unknown>;
   const keratometry: KeratometryScan[] = [];
   const biometry: BiometryScan[] = [];
+  const optional: OptionalScan[] = [];
   const seenK = new Set<string>();
   const seenB = new Set<string>();
+  const seenO = new Set<string>();
   let dropped = 0;
 
   for (const entry of asArray(source.keratometry)) {
@@ -161,9 +203,30 @@ function validate(raw: unknown): ScanResponse {
     seenB.add(side);
   }
 
+  for (const entry of asArray(source.optional)) {
+    const side = entry.side === "OD" || entry.side === "OS" ? entry.side : undefined;
+    if (!side || seenO.has(side)) {
+      dropped++;
+      continue;
+    }
+    // Each value stands alone here: an implausible lens thickness must not
+    // take a good WTW down with it, and a missing one is simply absent.
+    const reading: OptionalScan = { side };
+    for (const key of ["lensThickness", "wtw"] as const) {
+      const value = entry[key];
+      if (value === undefined || value === null) continue;
+      if (inRange(value, RANGES[key])) reading[key] = value;
+      else dropped++;
+    }
+    if (reading.lensThickness === undefined && reading.wtw === undefined) continue;
+    optional.push(reading);
+    seenO.add(side);
+  }
+
   return {
     keratometry,
     biometry,
+    optional,
     warning:
       dropped > 0
         ? `${dropped} reading(s) were discarded for falling outside the physiologic range — enter those values by hand.`

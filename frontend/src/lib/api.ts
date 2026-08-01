@@ -19,6 +19,8 @@ export interface CalculateResponse {
   recommended?: { od?: string; os?: string };
   /** The per-eye "IOL Power | Optic | Refraction" tables, when both parsed cleanly. */
   tables?: { od: IolTableRow[]; os: IolTableRow[] };
+  /** The lens the calculator actually had selected, with the constants it used. */
+  lens?: { name: string; lensFactor?: string; aConstant?: string };
   /** Set when the automation could not confirm it read the page it expected (see backend README). */
   warning?: string;
 }
@@ -41,10 +43,18 @@ export interface ScannedBiometry {
   acd: number;
 }
 
+/** The calculator's "Optional:" fields, present only when the printout shows them. */
+export interface ScannedOptional {
+  side: EyeSide;
+  lensThickness?: number;
+  wtw?: number;
+}
+
 /** One photo yields whichever of the two printouts it happens to contain. */
 export interface ScanResponse {
   keratometry: ScannedKeratometry[];
   biometry: ScannedBiometry[];
+  optional?: ScannedOptional[];
   warning?: string;
 }
 
@@ -66,6 +76,21 @@ export async function scanPhoto(imageBase64: string, mediaType: string): Promise
     throw new Error(body?.error ?? `Scan failed (${res.status}).`);
   }
   return res.json();
+}
+
+/**
+ * The lens names the live calculator offers. Best-effort: the caller keeps
+ * its bundled list when this fails (the backend has to reach the site to
+ * answer, which can be blocked or challenged).
+ */
+export async function fetchLensOptions(): Promise<string[]> {
+  const res = await fetch(`${API_BASE}/api/lenses`);
+  if (!res.ok) throw new Error(`Lens list unavailable (${res.status}).`);
+  const body = (await res.json()) as { lenses?: unknown };
+  if (!Array.isArray(body.lenses) || body.lenses.some((name) => typeof name !== "string")) {
+    throw new Error("Lens list came back in an unexpected shape.");
+  }
+  return body.lenses as string[];
 }
 
 export async function calculateBarrett(payload: CalculateRequest): Promise<CalculateResponse> {

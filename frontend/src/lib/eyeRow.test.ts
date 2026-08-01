@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { A_CONSTANT, IOL_MODEL, LENS_FACTOR } from "./constants";
-import { applyBiometry, emptyRow, isRowComplete, isRowEmpty, planCalculation, toEyeInput } from "./eyeRow";
+import { PERSONAL_CONSTANT } from "./lenses";
+import {
+  applyBiometry,
+  applyOptional,
+  emptyRow,
+  formatRowForClipboard,
+  isRowComplete,
+  isRowEmpty,
+  planCalculation,
+  toEyeInput,
+} from "./eyeRow";
 
 const COMPLETE_OD = {
   ...emptyRow("OD"),
@@ -49,14 +59,20 @@ describe("eyeRow helpers", () => {
       axialLength: "22.65",
       acd: "2.59",
       lensThickness: "4.71",
+      wtw: "11.80",
       targetRefraction: "-0.5",
     };
-    expect(toEyeInput(row)).toEqual({
+    expect(toEyeInput(row, PERSONAL_CONSTANT)).toEqual({
       side: "OS",
       keratometry: { k1: 43.04, k2: 44.01 },
-      biometry: { axialLength: 22.65, acd: 2.59, lensThickness: 4.71 },
+      biometry: { axialLength: 22.65, acd: 2.59, lensThickness: 4.71, wtw: 11.8 },
       manual: { targetRefraction: -0.5 },
-      iol: { iolModel: IOL_MODEL, aConstant: A_CONSTANT, lensFactor: LENS_FACTOR },
+      iol: {
+        iolModel: IOL_MODEL,
+        lens: PERSONAL_CONSTANT,
+        aConstant: A_CONSTANT,
+        lensFactor: LENS_FACTOR,
+      },
     });
   });
 
@@ -69,11 +85,11 @@ describe("eyeRow helpers", () => {
       acd: "2.79",
       targetRefraction: "0",
     };
-    const input = toEyeInput(row);
+    const input = toEyeInput(row, PERSONAL_CONSTANT);
     expect(input.keratometry).toEqual({ k1: 44.16, k2: 45.06 });
   });
 
-  it("fills axial length and ACD from a scan but leaves lens thickness for manual entry", () => {
+  it("fills axial length and ACD from a scan without touching the optional fields", () => {
     const scanned = applyBiometry(emptyRow("OD"), {
       side: "OD",
       sideSource: "marker",
@@ -96,6 +112,29 @@ describe("eyeRow helpers", () => {
       lensThickness: 4.71,
     });
     expect(scanned.lensThickness).toBe("4.50");
+  });
+
+  it("fills each optional value on its own, keeping anything already typed", () => {
+    const typed = { ...emptyRow("OD"), wtw: "12.10" };
+    const scanned = applyOptional(typed, { side: "OD", lensThickness: 4.71 });
+    expect(scanned.lensThickness).toBe("4.71");
+    expect(scanned.wtw).toBe("12.10");
+  });
+
+  it("counts a row holding only optional values as non-empty", () => {
+    expect(isRowEmpty({ ...emptyRow("OD"), wtw: "12.10" })).toBe(false);
+  });
+
+  it("lists this practice's constants for a personal constant, but not for a named lens", () => {
+    const row = { ...COMPLETE_OD, wtw: "12.10" };
+    const personal = formatRowForClipboard(row, PERSONAL_CONSTANT);
+    expect(personal).toContain(`A Constant: ${A_CONSTANT}`);
+    expect(personal).toContain("WTW: 12.10 mm");
+
+    const named = formatRowForClipboard(row, "Alcon SN60WF");
+    expect(named).toContain("Lens: Alcon SN60WF");
+    expect(named).not.toContain("A Constant");
+    expect(named).not.toContain("Lens Factor");
   });
 
   it("treats a fresh row as empty despite the default refraction of 0", () => {
