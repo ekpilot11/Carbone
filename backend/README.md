@@ -132,9 +132,17 @@ Two rules keep a wrong lens from producing a plausible wrong power:
 - With a named lens, Lens Factor is **not** filled — the site's own value
   for that lens stands. Only a "Personal Constant" run types this
   practice's 1.57. No manufacturer constants are transcribed into this
-  codebase; whatever the site had in the box at submit time is read back
-  and returned as `lens.lensFactor`, which is the only record of what
-  actually produced the numbers.
+  codebase; whatever the site held at submit time is read back and
+  returned as `lens.lensFactor` / `lens.aConstant`, the only record of
+  what actually produced the numbers.
+
+Reading the A Constant back needs care, because the form labels its two
+constants in one breath ("Lens Factor ... or A Constant") and a
+label-anchored lookup can land on the Lens Factor box. Both the labelled
+lookup and the fallback (scan the form's values) accept a number only if it
+falls in the A-constant band of 100-130 — no other field on the form comes
+near it — and an ambiguous read is reported as unknown rather than guessed.
+A wrong constant printed on a clinical record is worse than a missing one.
 
 Both eyes must carry the same lens and constants — the dropdown is
 form-wide, so a mismatched request is rejected rather than half-honoured.

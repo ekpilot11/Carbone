@@ -38,6 +38,26 @@ const PER_EYE_FIELDS = {
 } as const;
 
 const LENS_FACTOR_LABELS = ["Lens Factor"] as const;
+const A_CONSTANT_LABELS = ["A Constant", "A-Constant"] as const;
+
+/**
+ * The band a modern IOL's A constant falls in. Nothing else the form holds
+ * comes close (axial lengths ~22, K ~44, ACD ~3, lens factors ~1-3), which
+ * makes the value itself a reliable way to tell the constants apart — the
+ * form labels them together as "Lens Factor ... or A Constant", so a
+ * label-anchored lookup alone can land on the wrong box.
+ */
+const A_CONSTANT_RANGE = { min: 100, max: 130 } as const;
+
+function looksLikeAConstant(value: string): boolean {
+  const parsed = Number(value);
+  return (
+    value.trim() !== "" &&
+    Number.isFinite(parsed) &&
+    parsed >= A_CONSTANT_RANGE.min &&
+    parsed <= A_CONSTANT_RANGE.max
+  );
+}
 
 /**
  * The lens dropdown carries no usable label of its own, so it is found by
@@ -359,6 +379,33 @@ async function readLensFactor(root: SearchRoot): Promise<string | undefined> {
   return value.trim() === "" ? undefined : value.trim();
 }
 
+/**
+ * The A Constant the page holds at submit time — derived by the site from
+ * the Lens Factor we typed, or brought in by the named lens that was
+ * selected. The record has to state it, since for a named lens it is the
+ * site's number and appears nowhere else.
+ *
+ * Both routes to it are checked against the A-constant band, so a read that
+ * lands on the wrong box comes back as unknown rather than as a wrong
+ * constant printed on a clinical record.
+ */
+async function readAConstant(root: SearchRoot): Promise<string | undefined> {
+  const labelled = await locateByLabelText(root, A_CONSTANT_LABELS, 0);
+  if (labelled) {
+    const value = (await labelled.inputValue().catch(() => "")).trim();
+    if (looksLikeAConstant(value)) return value;
+  }
+
+  // The label sits in the same node as "Lens Factor" on this form, so fall
+  // back to the values themselves: exactly one field should be in the band.
+  const values = await root
+    .locator("input:not([type=hidden])")
+    .evaluateAll((nodes) => nodes.map((node) => (node as HTMLInputElement).value))
+    .catch(() => [] as string[]);
+  const candidates = [...new Set(values.map((value) => value.trim()).filter(looksLikeAConstant))];
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
 async function fillPatientPlaceholder(root: SearchRoot, filled: FilledEntry[]): Promise<string[]> {
   // The site requires a non-empty Patient Name before it renders the
   // "Recommended IOL" summary. A neutral placeholder goes in — never real
@@ -647,7 +694,11 @@ async function attemptCalculation(
     }
 
     // Read the constants off the page while the form is still on screen.
-    const lensUsed = { name: selectedLens, lensFactor: await readLensFactor(formRoot) };
+    const lensUsed = {
+      name: selectedLens,
+      lensFactor: await readLensFactor(formRoot),
+      aConstant: await readAConstant(formRoot),
+    };
 
     await clickCalculate(formRoot);
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
