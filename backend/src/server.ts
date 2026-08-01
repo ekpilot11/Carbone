@@ -1,7 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { runBarrettCalculation } from "./barrett.js";
-import { scanImage, visionConfigured, type ScanKind } from "./scan.js";
+import { scanImage, visionConfigured } from "./scan.js";
 import type { CalculateRequest } from "./types.js";
 import { validateCalculateRequest } from "./validate.js";
 
@@ -12,7 +12,6 @@ app.use(cors());
 app.use("/api/scan", express.json({ limit: "12mb" }));
 app.use(express.json({ limit: "20kb" }));
 
-const SCAN_KINDS: ScanKind[] = ["topography", "biometry"];
 const MEDIA_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 type MediaType = (typeof MEDIA_TYPES)[number];
 
@@ -25,11 +24,7 @@ app.post("/api/scan", async (req, res) => {
     return;
   }
 
-  const { kind, imageBase64, mediaType } = req.body ?? {};
-  if (!SCAN_KINDS.includes(kind)) {
-    res.status(400).json({ error: `kind must be one of: ${SCAN_KINDS.join(", ")}` });
-    return;
-  }
+  const { imageBase64, mediaType } = req.body ?? {};
   if (typeof imageBase64 !== "string" || imageBase64.length === 0) {
     res.status(400).json({ error: "imageBase64 must be a non-empty base64 string" });
     return;
@@ -40,7 +35,7 @@ app.post("/api/scan", async (req, res) => {
   }
 
   try {
-    res.json(await scanImage(kind, imageBase64, mediaType as MediaType));
+    res.json(await scanImage(imageBase64, mediaType as MediaType));
   } catch (err) {
     // Deliberately not logging the image or the model's output: both carry
     // clinical content that shouldn't sit in server logs.

@@ -1,9 +1,10 @@
 # IOL Power Calculator Assistant
 
-Scans an ophthalmology biometry/topography printout with a phone camera,
-reads the keratometry (K1/K2) and biometry (axial length, ACD) values with
-on-device OCR, and — after you review and complete the remaining clinical
-inputs — drives the [Barrett Universal II calculator](https://calc.apacrs.org/barrett_universal2105/)
+Photograph the ophthalmology exam printouts once — keratometry strip and
+A-scan biometry together — and a vision model reads the keratometry (K1/K2)
+and biometry (axial length, ACD) for both eyes. After you review and
+complete the remaining clinical inputs, the app drives the
+[Barrett Universal II calculator](https://calc.apacrs.org/barrett_universal2105/)
 to compute IOL power recommendations for cataract surgery.
 
 ## ⚠️ Medical disclaimer
@@ -28,7 +29,9 @@ What this means in practice:
 
 - The image is sent as it was captured. If the frame includes a patient
   name, record number, CPF, or date of birth, **that is transmitted too.**
-  Frame the shot on the measurement block alone.
+  A single wide shot of both printouts makes this easy to do by accident —
+  frame on the two measurement strips and keep the patient's paperwork out
+  of the picture.
 - The prompt instructs the model to return only clinical numbers and never
   a patient identifier, and the server validates the response against
   physiologic ranges — but that constrains what comes *back*, not what is
@@ -51,15 +54,16 @@ nothing is persisted anywhere.
 
 ## Architecture
 
-- **`frontend/`** — React + Vite app. Camera capture (live `getUserMedia`
-  view or native photo upload), image downscaling, an editable review form,
-  and the results view. Carries the on-device OCR fallback (Tesseract.js
-  plus format-specific parsers) used when no vision model is configured.
-- **`backend/`** — Express server with two routes: `POST /api/scan` reads a
-  photographed printout with a vision model and returns range-validated
-  values, and `POST /api/calculate` drives a Playwright automation that
-  fills those values into the Barrett Universal II calculator and scrapes
-  back the results.
+- **`frontend/`** — React + Vite app. A single camera capture (live
+  `getUserMedia` view or native photo upload), image downscaling, an
+  editable review form, and the results view. Carries the on-device OCR
+  fallback (Tesseract.js plus format-specific parsers) used when no vision
+  model is configured.
+- **`backend/`** — Express server with two routes: `POST /api/scan` reads
+  one photograph of the printouts with a vision model and returns
+  range-validated values for both eyes, and `POST /api/calculate` drives a
+  Playwright automation that fills those values into the Barrett Universal
+  II calculator and scrapes back the results.
 
 ## Status: verified working (2026-08-01)
 

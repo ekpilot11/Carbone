@@ -2,20 +2,20 @@ import Anthropic from "@anthropic-ai/sdk";
 import { inRange, RANGES } from "./ranges.js";
 
 /**
- * Reads clinical values off a photographed printout using a vision model.
+ * Reads every clinical value the Barrett calculator needs off a single
+ * photograph — keratometry and biometry together, both eyes.
  *
- * The in-browser OCR this replaced could not cope with photographs of
- * thermal-printed strips — it has no notion of what the document is, so a
- * faded "45.06" became "920.06" with equal confidence. A vision model reads
- * the page in context and is far more accurate.
+ * One photo rather than one per document: the clinic photographs the
+ * keratometer strip and the A-scan printout side by side, and a vision
+ * model reads a page in context rather than needing each format isolated.
+ * A photo carrying only one of the two still works — the missing half
+ * simply comes back empty.
  *
  * The tradeoff, and the reason this is opt-in: the photo leaves the
  * clinician's machine. The prompt asks for clinical numbers only and
  * forbids returning any patient identifier, but the image itself is still
  * transmitted — see the privacy sections of the READMEs.
  */
-
-export type ScanKind = "topography" | "biometry";
 
 export interface KeratometryScan {
   side: "OD" | "OS";
@@ -30,58 +30,60 @@ export interface BiometryScan {
 }
 
 export interface ScanResponse {
-  readings: (KeratometryScan | BiometryScan)[];
+  keratometry: KeratometryScan[];
+  biometry: BiometryScan[];
   /** Set when the model read the page but some values failed the plausibility check. */
   warning?: string;
 }
 
-/** Anthropic's vision limit is 2576px on the long edge; larger images are downscaled server-side anyway. */
 const MODEL = process.env.SCAN_MODEL ?? "claude-opus-5";
 const MAX_TOKENS = 4096;
 
-const TOPOGRAPHY_PROMPT = `This is a photograph of a keratometer / corneal topography printout.
+const PROMPT = `This photograph shows ophthalmology exam printouts. It may contain a
+keratometry/topography strip, an A-scan biometry printout, or both — often
+side by side, and possibly alongside unrelated paperwork.
 
-Read the simulated keratometry (Sim K's) values for each eye.
+Extract two sets of measurements.
 
-Rules:
-- "<R>" marks the right eye (report as OD); "<L>" marks the left eye (report as OS).
-  A printout may also label eyes as OD/OS or OE directly — OE means the left eye (OS).
-- The two corneal power values printed directly below an eye's marker are that
-  eye's K readings, in dioptres (typically 35-50 D).
-- Report the LOWER of the two as k1 and the HIGHER as k2, always.
+KERATOMETRY (from the "Sim K's" strip, if present):
+- "<R>" marks the right eye (report as OD); "<L>" marks the left eye (report
+  as OS). A printout may instead label eyes OD/OS or OE directly — OE means
+  the left eye (OS).
+- The two corneal power values printed directly below an eye's marker are
+  that eye's K readings, in dioptres (typically 35-50 D).
+- Report the LOWER of the two as k1 and the HIGHER as k2, always. The two
+  values are often very close (e.g. 43.22 and 43.23) — read each digit
+  carefully rather than assuming they are equal.
 - Ignore the corneal radii in parentheses (typically 7-9, in mm), the "dk"
-  difference line, and any axis column (whole numbers up to 180).
-- Include an eye only if you can read both of its K values confidently. Omit
-  any eye you cannot read — never guess or interpolate a digit.
+  difference line, and the "Ax" axis column (whole numbers up to 180).
 
-Report only these numbers. Do not report the patient's name, ID, date of
-birth, or any other identifying information, even if it is visible.`;
-
-const BIOMETRY_PROMPT = `This is a photograph of an ophthalmic A-scan biometry printout.
-
-Read the axial length and anterior chamber depth for each eye.
-
-Rules:
+BIOMETRY (from the A-scan printout, if present):
 - "AVGAXL" is the axial length, in mm (typically 20-26). The label may be
   printed or read as AVGAXL, AUGAXL, or AVUGAXL — they are the same field.
 - "ACD" on its own summary line is the anterior chamber depth, in mm
-  (typically 2-4). Do not use the "ACD" column header of the measurement
-  table above it.
-- Each eye has its own block. The eye is identified in the header line
-  "Sex:<sex> <eye> Age:<age>" — that <eye> is OD or OS. If that header is not
-  legible, use print order: the FIRST block is the right eye (OD) and the
-  second is the left eye (OS); this device always prints the right eye first.
-- Include an eye only if you can read both its axial length and its ACD
-  confidently. Omit any eye you cannot read — never guess or interpolate a digit.
+  (typically 1.5-4). Do not use the "ACD" column header of the measurement
+  table above it, and do not use the LENS or VITR lines.
+- Each eye has its own block, identified by the header line
+  "Sex:<sex> <eye> Age:<age>" — that <eye> is OD or OS. If that header is
+  not legible, use print order: the FIRST block is the right eye (OD) and
+  the second is the left eye (OS); this device always prints the right eye
+  first.
 
-Report only these numbers. Do not report the patient's name, ID, date of
-birth, or any other identifying information, even if it is visible.`;
+For both sets: include an eye only if you can read its values confidently.
+Omit any eye or any section you cannot read — never guess or interpolate a
+digit. If the photo contains only one of the two document types, return an
+empty array for the other.
 
-const TOPOGRAPHY_SCHEMA = {
+Report only these numbers. Do not report the patient's name, ID, record
+number, CPF, date of birth, address, or any other identifying information,
+even if it is visible in the photograph.`;
+
+const SCHEMA = {
   type: "object",
   properties: {
-    readings: {
+    keratometry: {
       type: "array",
+      description: "One entry per eye read from the Sim K's strip; empty if absent.",
       items: {
         type: "object",
         properties: {
@@ -93,16 +95,9 @@ const TOPOGRAPHY_SCHEMA = {
         additionalProperties: false,
       },
     },
-  },
-  required: ["readings"],
-  additionalProperties: false,
-} as const;
-
-const BIOMETRY_SCHEMA = {
-  type: "object",
-  properties: {
-    readings: {
+    biometry: {
       type: "array",
+      description: "One entry per eye read from the A-scan printout; empty if absent.",
       items: {
         type: "object",
         properties: {
@@ -115,7 +110,7 @@ const BIOMETRY_SCHEMA = {
       },
     },
   },
-  required: ["readings"],
+  required: ["keratometry", "biometry"],
   additionalProperties: false,
 } as const;
 
@@ -123,49 +118,60 @@ export function visionConfigured(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
+function asArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
+}
+
 /** Keeps the first reading per eye and drops anything physiologically impossible. */
-function validate(kind: ScanKind, raw: unknown): { readings: ScanResponse["readings"]; dropped: number } {
-  const items = Array.isArray((raw as { readings?: unknown })?.readings)
-    ? ((raw as { readings: unknown[] }).readings)
-    : [];
-  const readings: ScanResponse["readings"] = [];
-  const seen = new Set<string>();
+function validate(raw: unknown): ScanResponse {
+  const source = (raw ?? {}) as Record<string, unknown>;
+  const keratometry: KeratometryScan[] = [];
+  const biometry: BiometryScan[] = [];
+  const seenK = new Set<string>();
+  const seenB = new Set<string>();
   let dropped = 0;
 
-  for (const item of items) {
-    const entry = item as Record<string, unknown>;
+  for (const entry of asArray(source.keratometry)) {
     const side = entry.side === "OD" || entry.side === "OS" ? entry.side : undefined;
-    if (!side || seen.has(side)) {
+    const a = entry.k1;
+    const b = entry.k2;
+    if (!side || seenK.has(side) || !inRange(a, RANGES.keratometry) || !inRange(b, RANGES.keratometry)) {
       dropped++;
       continue;
     }
-
-    if (kind === "topography") {
-      const a = entry.k1;
-      const b = entry.k2;
-      if (!inRange(a, RANGES.keratometry) || !inRange(b, RANGES.keratometry)) {
-        dropped++;
-        continue;
-      }
-      // The convention is enforced here too, not merely requested in the prompt.
-      readings.push({ side, k1: Math.min(a, b), k2: Math.max(a, b) });
-    } else {
-      const axialLength = entry.axialLength;
-      const acd = entry.acd;
-      if (!inRange(axialLength, RANGES.axialLength) || !inRange(acd, RANGES.acd)) {
-        dropped++;
-        continue;
-      }
-      readings.push({ side, axialLength, acd });
-    }
-    seen.add(side);
+    // The K1-is-lower convention is enforced here, not merely requested.
+    keratometry.push({ side, k1: Math.min(a, b), k2: Math.max(a, b) });
+    seenK.add(side);
   }
 
-  return { readings, dropped };
+  for (const entry of asArray(source.biometry)) {
+    const side = entry.side === "OD" || entry.side === "OS" ? entry.side : undefined;
+    const axialLength = entry.axialLength;
+    const acd = entry.acd;
+    if (
+      !side ||
+      seenB.has(side) ||
+      !inRange(axialLength, RANGES.axialLength) ||
+      !inRange(acd, RANGES.acd)
+    ) {
+      dropped++;
+      continue;
+    }
+    biometry.push({ side, axialLength, acd });
+    seenB.add(side);
+  }
+
+  return {
+    keratometry,
+    biometry,
+    warning:
+      dropped > 0
+        ? `${dropped} reading(s) were discarded for falling outside the physiologic range — enter those values by hand.`
+        : undefined,
+  };
 }
 
 export async function scanImage(
-  kind: ScanKind,
   imageBase64: string,
   mediaType: "image/jpeg" | "image/png" | "image/webp",
 ): Promise<ScanResponse> {
@@ -178,18 +184,13 @@ export async function scanImage(
     // model serves it instead of the call simply failing.
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
-    output_config: {
-      format: {
-        type: "json_schema",
-        schema: kind === "topography" ? TOPOGRAPHY_SCHEMA : BIOMETRY_SCHEMA,
-      },
-    },
+    output_config: { format: { type: "json_schema", schema: SCHEMA } },
     messages: [
       {
         role: "user",
         content: [
           { type: "image", source: { type: "base64", media_type: mediaType, data: imageBase64 } },
-          { type: "text", text: kind === "topography" ? TOPOGRAPHY_PROMPT : BIOMETRY_PROMPT },
+          { type: "text", text: PROMPT },
         ],
       },
     ],
@@ -197,7 +198,7 @@ export async function scanImage(
 
   if (response.stop_reason === "refusal") {
     throw new Error(
-      "The vision model declined to read this image. Enter the values by hand, or retake the photo showing only the printout.",
+      "The vision model declined to read this image. Enter the values by hand, or retake the photo showing only the printouts.",
     );
   }
 
@@ -213,12 +214,5 @@ export async function scanImage(
     throw new Error("The vision model's response could not be parsed.");
   }
 
-  const { readings, dropped } = validate(kind, parsed);
-  return {
-    readings,
-    warning:
-      dropped > 0
-        ? `${dropped} reading(s) were discarded for falling outside the physiologic range — enter those values by hand.`
-        : undefined,
-  };
+  return validate(parsed);
 }

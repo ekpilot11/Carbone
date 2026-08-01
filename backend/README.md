@@ -2,17 +2,25 @@
 
 Express server exposing two routes:
 
-- `POST /api/scan` — reads a photographed keratometry or biometry printout
-  with a vision model and returns range-validated clinical values.
+- `POST /api/scan` — reads **one** photograph containing the keratometry
+  strip, the A-scan printout, or both, and returns range-validated clinical
+  values for whichever it finds.
 - `POST /api/calculate` — drives a headless Chromium (via Playwright) to
   fill those values into https://calc.apacrs.org/barrett_universal2105/ and
   scrape back the results.
 
 ## Photo scanning (`POST /api/scan`)
 
+Body: `{ imageBase64, mediaType }` (JPEG/PNG/WebP). Returns
+`{ keratometry: [{side, k1, k2}], biometry: [{side, axialLength, acd}], warning? }`
+— each array holds one entry per eye that could be read, and is empty when
+that printout isn't in the photo. A single prompt covers both formats, so
+one wide shot of the two strips side by side works, and so does a close-up
+of either one alone.
+
 Set `ANTHROPIC_API_KEY` to enable it; without it the route returns **503**
-and the frontend silently falls back to in-browser OCR. Override the model
-with `SCAN_MODEL` (default `claude-opus-5`).
+and the frontend falls back to in-browser OCR (saying so in the UI).
+Override the model with `SCAN_MODEL` (default `claude-opus-5`).
 
 **The photograph is sent to the Anthropic API** — see the privacy section of
 the root README before using this with real patients, and prefer framing the

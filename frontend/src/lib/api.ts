@@ -29,8 +29,6 @@ export interface CalculateResponse {
 // on different origins.
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
-export type ScanKind = "topography" | "biometry";
-
 export interface ScannedKeratometry {
   side: EyeSide;
   k1: number;
@@ -43,23 +41,21 @@ export interface ScannedBiometry {
   acd: number;
 }
 
+/** One photo yields whichever of the two printouts it happens to contain. */
 export interface ScanResponse {
-  readings: (ScannedKeratometry | ScannedBiometry)[];
+  keratometry: ScannedKeratometry[];
+  biometry: ScannedBiometry[];
   warning?: string;
 }
 
 /** Raised when the server has no vision model configured, so the caller can fall back to on-device OCR. */
 export class ScanUnavailableError extends Error {}
 
-export async function scanPhoto(
-  kind: ScanKind,
-  imageBase64: string,
-  mediaType: string,
-): Promise<ScanResponse> {
+export async function scanPhoto(imageBase64: string, mediaType: string): Promise<ScanResponse> {
   const res = await fetch(`${API_BASE}/api/scan`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind, imageBase64, mediaType }),
+    body: JSON.stringify({ imageBase64, mediaType }),
   });
 
   if (res.status === 503) {

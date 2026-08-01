@@ -7,8 +7,6 @@ import {
   ScanUnavailableError,
   type CalculateResponse,
   type IolTableRow,
-  type ScannedBiometry,
-  type ScannedKeratometry,
 } from "./lib/api";
 import { prepareImage } from "./lib/imagePrep";
 import {
@@ -29,21 +27,13 @@ import type { BiometryReading, EyeSide, KeratometryReading } from "./lib/types";
 
 const CALCULATOR_URL = "https://calc.apacrs.org/barrett_universal2105/";
 
-type ScanKind = "topography" | "biometry";
-
 function App() {
   const [rows, setRows] = useState<Record<EyeSide, EyeRowState>>({
     OD: emptyRow("OD"),
     OS: emptyRow("OS"),
   });
-  const [previews, setPreviews] = useState<Record<ScanKind, string | null>>({
-    topography: null,
-    biometry: null,
-  });
-  const [ocrBusy, setOcrBusy] = useState<Record<ScanKind, boolean>>({
-    topography: false,
-    biometry: false,
-  });
+  const [preview, setPreview] = useState<string | null>(null);
+  const [scanBusy, setScanBusy] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
   const [failedOcrText, setFailedOcrText] = useState<string | null>(null);
   const [calculating, setCalculating] = useState(false);
@@ -56,10 +46,7 @@ function App() {
    * photographed thermal printouts far better than in-browser OCR. If the
    * server has no model configured, falls back to the on-device reader.
    */
-  async function readPhoto(
-    kind: ScanKind,
-    blob: Blob,
-  ): Promise<{
+  async function readPhoto(blob: Blob): Promise<{
     keratometry: Map<EyeSide, KeratometryReading>;
     biometry: Map<EyeSide, BiometryReading>;
     bestText: string;
@@ -71,25 +58,22 @@ function App() {
 
     try {
       const { base64, mediaType } = await prepareImage(blob);
-      const result = await scanPhoto(kind, base64, mediaType);
-      for (const reading of result.readings) {
-        if (kind === "topography") {
-          const k = reading as ScannedKeratometry;
-          keratometry.set(k.side, {
-            side: k.side,
-            k1: k.k1,
-            k2: k.k2,
-            cylinder: Number((k.k2 - k.k1).toFixed(2)),
-          });
-        } else {
-          const b = reading as ScannedBiometry;
-          biometry.set(b.side, {
-            side: b.side,
-            sideSource: "marker",
-            axialLength: b.axialLength,
-            acd: b.acd,
-          });
-        }
+      const result = await scanPhoto(base64, mediaType);
+      for (const k of result.keratometry) {
+        keratometry.set(k.side, {
+          side: k.side,
+          k1: k.k1,
+          k2: k.k2,
+          cylinder: Number((k.k2 - k.k1).toFixed(2)),
+        });
+      }
+      for (const b of result.biometry) {
+        biometry.set(b.side, {
+          side: b.side,
+          sideSource: "marker",
+          axialLength: b.axialLength,
+          acd: b.acd,
+        });
       }
       return { keratometry, biometry, bestText: "", warning: result.warning, usedFallback: false };
     } catch (err) {
@@ -98,32 +82,28 @@ function App() {
 
     // On-device fallback: each image treatment reads different parts of a
     // faded printout, so keep the first good reading per eye and stop once
-    // both eyes are covered.
+    // all four eye/format combinations are covered.
     let bestText = "";
     for await (const text of recognizeVariants(blob)) {
       if (text.trim().length > bestText.trim().length) bestText = text;
-      if (kind === "topography") {
-        for (const reading of parseTopographyText(text)) {
-          if (!keratometry.has(reading.side)) keratometry.set(reading.side, reading);
-        }
-        if (keratometry.size === 2) break;
-      } else {
-        for (const reading of parseBiometryText(text)) {
-          if (!biometry.has(reading.side)) biometry.set(reading.side, reading);
-        }
-        if (biometry.size === 2) break;
+      for (const reading of parseTopographyText(text)) {
+        if (!keratometry.has(reading.side)) keratometry.set(reading.side, reading);
       }
+      for (const reading of parseBiometryText(text)) {
+        if (!biometry.has(reading.side)) biometry.set(reading.side, reading);
+      }
+      if (keratometry.size === 2 && biometry.size === 2) break;
     }
     return { keratometry, biometry, bestText, usedFallback: true };
   }
 
-  async function handleScan(kind: ScanKind, blob: Blob) {
+  async function handleScan(blob: Blob) {
     setScanMessage(null);
     setFailedOcrText(null);
-    setPreviews((prev) => ({ ...prev, [kind]: URL.createObjectURL(blob) }));
-    setOcrBusy((prev) => ({ ...prev, [kind]: true }));
+    setPreview(URL.createObjectURL(blob));
+    setScanBusy(true);
     try {
-      const { keratometry, biometry, bestText, warning, usedFallback } = await readPhoto(kind, blob);
+      const { keratometry, biometry, bestText, warning, usedFallback } = await readPhoto(blob);
 
       // Falling back is a much weaker reader, so say so rather than letting
       // a degraded scan look like a normal one.
@@ -131,12 +111,9 @@ function App() {
         ? "Read on this device — the server has no vision model configured (ANTHROPIC_API_KEY), so accuracy is much lower. Check every value."
         : null;
 
-      const found = kind === "topography" ? keratometry : biometry;
-      if (found.size === 0) {
+      if (keratometry.size === 0 && biometry.size === 0) {
         const advice =
-          kind === "topography"
-            ? "Couldn't read the K values from that photo. Move closer so the numbers fill the frame, hold the paper flat and well-lit, then retake — or type the values in below."
-            : "Couldn't read the AL/ACD values from that photo. Move closer so the printout fills the frame, hold it flat and well-lit, then retake — or type the values in below.";
+          "Couldn't read any values from that photo. Make sure the printouts are flat, well-lit, and large enough in the frame that the digits are legible — then retake, or type the values in below.";
         setScanMessage(fallbackNote ? `${fallbackNote} ${advice}` : advice);
         setFailedOcrText(bestText.trim() || "(nothing readable)");
         return;
@@ -153,13 +130,25 @@ function App() {
         return next;
       });
 
-      const missing = (["OD", "OS"] as const).filter((side) => !found.has(side));
       const notes: string[] = [];
       if (fallbackNote) notes.push(fallbackNote);
       if (warning) notes.push(warning);
-      if (missing.length === 1) {
-        const readSide = [...found.keys()][0];
-        notes.push(`Only ${readSide} could be read — enter ${missing[0]} by hand.`);
+      // Each measurement type is reported separately: a photo can easily
+      // catch the whole A-scan strip but clip the keratometry, and the
+      // clinician needs to know exactly which fields are still theirs to fill.
+      const missingK = (["OD", "OS"] as const).filter((side) => !keratometry.has(side));
+      const missingB = (["OD", "OS"] as const).filter((side) => !biometry.has(side));
+      if (missingK.length === 2) {
+        notes.push("No K values were found — enter K1/K2 for both eyes by hand.");
+      } else if (missingK.length === 1) {
+        notes.push(`K values were only read for ${missingK[0] === "OD" ? "OS" : "OD"} — enter ${missingK[0]}'s by hand.`);
+      }
+      if (missingB.length === 2) {
+        notes.push("No axial length / ACD values were found — enter them by hand.");
+      } else if (missingB.length === 1) {
+        notes.push(
+          `Axial length / ACD were only read for ${missingB[0] === "OD" ? "OS" : "OD"} — enter ${missingB[0]}'s by hand.`,
+        );
       }
       // The printout always lists the right eye first, so print order is
       // reliable for a two-block scan and needs no warning. A lone block
@@ -181,7 +170,7 @@ function App() {
           : "Scanning failed on that photo. You can retake it or type the values in below.",
       );
     } finally {
-      setOcrBusy((prev) => ({ ...prev, [kind]: false }));
+      setScanBusy(false);
     }
   }
 
@@ -239,18 +228,11 @@ function App() {
 
       <section className="scans">
         <CameraCapture
-          label="1. Corneal topography / K readings"
-          hint="Photograph the Sim K's strip (or labeled K1/K2 values) so the numbers fill the frame. Avoid including the patient's name or ID in the shot."
-          onCapture={(blob) => handleScan("topography", blob)}
-          previewUrl={previews.topography}
-          busy={ocrBusy.topography}
-        />
-        <CameraCapture
-          label="2. Biometry (AL / ACD)"
-          hint="Photograph the A-scan printout (AVGAXL, ACD, LENS, VITR) so it fills the frame. Avoid including the patient's name or ID in the shot."
-          onCapture={(blob) => handleScan("biometry", blob)}
-          previewUrl={previews.biometry}
-          busy={ocrBusy.biometry}
+          label="1. Photograph the exam printouts"
+          hint="One photo of the keratometry strip and the A-scan printout together — or either one on its own. Keep the paper flat and well-lit, and leave the patient's name and ID out of the frame."
+          onCapture={handleScan}
+          previewUrl={preview}
+          busy={scanBusy}
         />
       </section>
 
