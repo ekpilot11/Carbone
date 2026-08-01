@@ -62,10 +62,18 @@ const en = {
   reviewHint:
     "Check every value read from the photo. The printout doesn't label which K is which, so K1 is always the lower of the two values (swapped automatically if entered the other way round). Refraction target defaults to 0 (emmetropia) — change it only when the plan differs. The Optional: fields are never read from the photo; type them in if you have them. To calculate a single eye, fill in only that eye — use \"Clear\" to empty the other one.",
   lensLabel: "Lens",
-  lensPersonalNote: (model: string, aConstant: number, lensFactor: number) =>
-    `IOL: ${model} · A-Constant ${aConstant} · Lens Factor ${lensFactor} — this practice's own constants, sent with every calculation.`,
-  lensNamedNote: (lens: string, aConstant: number, lensFactor: number) =>
-    `${lens} is selected in the calculator itself, so it uses that lens's own A-Constant and Lens Factor — this practice's constants (${aConstant} / ${lensFactor}) are not applied. The constants actually used are reported with the results.`,
+  fieldLensFactor: "Lens Factor",
+  fieldAConstant: "A Constant",
+  lensPersonalNote: (model: string) =>
+    `IOL: ${model} · the two constants above are typed in and sent with every calculation. They start at this practice's own values; edit either one to use something else.`,
+  lensNamedNote: (lens: string) =>
+    `${lens} is selected in the calculator itself, so the calculator applies that lens's own constants — the values above are shown for reference only and are not sent. Switch back to "Personal Constant" to enter constants by hand. The constants actually used are reported with the results.`,
+  lensConstantsUnknown: (lens: string) =>
+    `The constants for ${lens} aren't stored here yet; the calculator supplies its own and reports them with the results.`,
+  planBadLensFactor: (min: number, max: number) =>
+    `Lens Factor must be a number between ${min} and ${max} (the calculator's own range).`,
+  planBadAConstant: (min: number, max: number) =>
+    `A Constant must be a number between ${min} and ${max} (the calculator's own range).`,
 
   eyeOd: "OD (right eye)",
   eyeOs: "OS (left eye)",
@@ -187,10 +195,18 @@ const pt: Strings = {
   reviewHint:
     "Confira cada valor lido da foto. O impresso não indica qual K é qual, então K1 é sempre o menor dos dois valores (trocados automaticamente se digitados ao contrário). A refração alvo vem como 0 (emetropia) — altere apenas se o plano for outro. Os campos de Opcional: nunca são lidos da foto; digite-os se tiver os valores. Para calcular um olho só, preencha apenas esse olho — use \"Limpar\" para esvaziar o outro.",
   lensLabel: "Lente",
-  lensPersonalNote: (model: string, aConstant: number, lensFactor: number) =>
-    `LIO: ${model} · Constante A ${aConstant} · Lens Factor ${lensFactor} — constantes próprias deste serviço, enviadas em todo cálculo.`,
-  lensNamedNote: (lens: string, aConstant: number, lensFactor: number) =>
-    `${lens} é selecionada na própria calculadora, que usa a Constante A e o Lens Factor dessa lente — as constantes deste serviço (${aConstant} / ${lensFactor}) não são aplicadas. As constantes realmente usadas aparecem junto com os resultados.`,
+  fieldLensFactor: "Lens Factor",
+  fieldAConstant: "Constante A",
+  lensPersonalNote: (model: string) =>
+    `LIO: ${model} · as duas constantes acima são digitadas e enviadas em todo cálculo. Elas começam com os valores próprios deste serviço; altere qualquer uma para usar outros.`,
+  lensNamedNote: (lens: string) =>
+    `${lens} é selecionada na própria calculadora, que aplica as constantes dessa lente — os valores acima são apenas referência e não são enviados. Volte para "Personal Constant" para digitar as constantes. As constantes realmente usadas aparecem junto com os resultados.`,
+  lensConstantsUnknown: (lens: string) =>
+    `As constantes da ${lens} ainda não estão cadastradas aqui; a calculadora usa as dela e as informa junto com os resultados.`,
+  planBadLensFactor: (min: number, max: number) =>
+    `O Lens Factor precisa ser um número entre ${min} e ${max} (faixa da própria calculadora).`,
+  planBadAConstant: (min: number, max: number) =>
+    `A Constante A precisa ser um número entre ${min} e ${max} (faixa da própria calculadora).`,
 
   eyeOd: "OD (olho direito)",
   eyeOs: "OS (olho esquerdo)",

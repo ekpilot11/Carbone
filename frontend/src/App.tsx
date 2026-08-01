@@ -19,8 +19,9 @@ import {
   planCalculation,
   toEyeInput,
   type EyeRowState,
+  type LensSettings,
 } from "./lib/eyeRow";
-import { A_CONSTANT, IOL_MODEL, LENS_FACTOR } from "./lib/constants";
+import { A_CONSTANT, CONSTANT_RANGES, constantInRange, IOL_MODEL, LENS_FACTOR } from "./lib/constants";
 import {
   initialLanguage,
   LANGUAGES,
@@ -30,7 +31,12 @@ import {
   type Lang,
   type Strings,
 } from "./lib/i18n";
-import { BUNDLED_LENS_OPTIONS, isPersonalConstant, PERSONAL_CONSTANT } from "./lib/lenses";
+import {
+  BUNDLED_LENS_OPTIONS,
+  isPersonalConstant,
+  lensConstants,
+  PERSONAL_CONSTANT,
+} from "./lib/lenses";
 import {
   buildMedicalRecordPdf,
   medicalRecordFileName,
@@ -76,12 +82,20 @@ function App() {
   const [submitted, setSubmitted] = useState<{
     rows: Record<EyeSide, EyeRowState>;
     sides: EyeSide[];
-    lens: string;
+    settings: LensSettings;
   } | null>(null);
   const [calcError, setCalcError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // The lens dropdown and its two constants. They start on this practice's
+  // own values, are typed in (never read from a photo), and are replaced by
+  // a lens's own constants the moment one is picked from the dropdown.
   const [lens, setLens] = useState<string>(PERSONAL_CONSTANT);
+  const [constants, setConstants] = useState({
+    lensFactor: String(LENS_FACTOR),
+    aConstant: String(A_CONSTANT),
+  });
   const [lensOptions, setLensOptions] = useState<readonly string[]>(BUNDLED_LENS_OPTIONS);
+  const settings: LensSettings = { lens, ...constants };
   // Filled from the photo when the name is legible, and editable either
   // way. It heads the PDF record and is never sent to the calculator.
   const [patientName, setPatientName] = useState("");
@@ -90,6 +104,25 @@ function App() {
     () => ({ OD: t.eyeOd, OS: t.eyeOs }),
     [t],
   );
+
+  /**
+   * Picking a lens shows that lens's constants (the calculator will apply
+   * its own copies); going back to "Personal Constant" restores this
+   * practice's. A lens whose constants aren't stored here blanks the boxes
+   * rather than leaving the previous lens's numbers on screen.
+   */
+  function changeLens(next: string) {
+    setLens(next);
+    if (isPersonalConstant(next)) {
+      setConstants({ lensFactor: String(LENS_FACTOR), aConstant: String(A_CONSTANT) });
+      return;
+    }
+    const known = lensConstants(next);
+    setConstants({
+      lensFactor: known ? String(known.lensFactor) : "",
+      aConstant: known ? String(known.aConstant) : "",
+    });
+  }
 
   function changeLanguage(next: Lang) {
     setLang(next);
@@ -281,27 +314,43 @@ function App() {
   }
 
   const plan = planCalculation(rows.OD, rows.OS);
-  const planProblem = plan.ok
+  // A named lens brings its own constants, so only a personal-constant run
+  // needs the two boxes to hold usable numbers.
+  const usingPersonalConstant = isPersonalConstant(lens);
+  const constantsProblem = !usingPersonalConstant
     ? null
-    : plan.reason === "partialOd"
+    : !constantInRange(constants.lensFactor, CONSTANT_RANGES.lensFactor)
+      ? t.planBadLensFactor(CONSTANT_RANGES.lensFactor.min, CONSTANT_RANGES.lensFactor.max)
+      : !constantInRange(constants.aConstant, CONSTANT_RANGES.aConstant)
+        ? t.planBadAConstant(CONSTANT_RANGES.aConstant.min, CONSTANT_RANGES.aConstant.max)
+        : null;
+  const planProblem = !plan.ok
+    ? plan.reason === "partialOd"
       ? t.planPartialOd
       : plan.reason === "partialOs"
         ? t.planPartialOs
-        : t.planEmpty;
+        : t.planEmpty
+    : constantsProblem;
+  const canCalculate = plan.ok && constantsProblem === null;
 
   async function handleCalculate() {
-    if (!plan.ok) return;
+    if (!plan.ok || constantsProblem !== null) return;
     setCalcError(null);
     setResult(null);
     setSubmitted(null);
     setCalculating(true);
+    // A named lens is sent with the practice's constants attached but
+    // unused: the backend selects the lens and lets the site fill them.
+    const sent: LensSettings = usingPersonalConstant
+      ? settings
+      : { lens, lensFactor: String(LENS_FACTOR), aConstant: String(A_CONSTANT) };
     try {
       const response = await calculateBarrett({
-        od: plan.sides.includes("OD") ? toEyeInput(rows.OD, lens) : undefined,
-        os: plan.sides.includes("OS") ? toEyeInput(rows.OS, lens) : undefined,
+        od: plan.sides.includes("OD") ? toEyeInput(rows.OD, sent) : undefined,
+        os: plan.sides.includes("OS") ? toEyeInput(rows.OS, sent) : undefined,
       });
       setResult(response);
-      setSubmitted({ rows, sides: plan.sides, lens });
+      setSubmitted({ rows, sides: plan.sides, settings: sent });
     } catch (err) {
       setCalcError(err instanceof Error ? err.message : t.calcFailed);
     } finally {
@@ -317,16 +366,19 @@ function App() {
    */
   function handleDownloadRecord() {
     if (!result || !submitted) return;
-    const usedPersonalConstant = isPersonalConstant(submitted.lens);
+    const usedPersonalConstant = isPersonalConstant(submitted.settings.lens);
     const record: MedicalRecordInput = {
       patientName,
       recordedAt: new Date(),
       lang,
       lens: {
-        name: result.lens?.name ?? submitted.lens,
+        name: result.lens?.name ?? submitted.settings.lens,
         lensFactor:
-          result.lens?.lensFactor ?? (usedPersonalConstant ? String(LENS_FACTOR) : undefined),
-        aConstant: result.lens?.aConstant ?? (usedPersonalConstant ? String(A_CONSTANT) : undefined),
+          result.lens?.lensFactor ??
+          (usedPersonalConstant ? submitted.settings.lensFactor : undefined),
+        aConstant:
+          result.lens?.aConstant ??
+          (usedPersonalConstant ? submitted.settings.aConstant : undefined),
       },
       eyes: submitted.sides.map((side) => ({
         side,
@@ -340,8 +392,10 @@ function App() {
 
   async function handleCopy() {
     const sections: string[] = [];
-    if (!isRowEmpty(rows.OD)) sections.push("OD (right eye)", formatRowForClipboard(rows.OD, lens), "");
-    if (!isRowEmpty(rows.OS)) sections.push("OS (left eye)", formatRowForClipboard(rows.OS, lens));
+    if (!isRowEmpty(rows.OD)) {
+      sections.push("OD (right eye)", formatRowForClipboard(rows.OD, settings), "");
+    }
+    if (!isRowEmpty(rows.OS)) sections.push("OS (left eye)", formatRowForClipboard(rows.OS, settings));
     const text = sections.join("\n").trim() || t.noValuesToCopy;
     await navigator.clipboard.writeText(text);
     setCopied(true);
@@ -391,20 +445,44 @@ function App() {
       <section className="review">
         <h2>{t.reviewTitle}</h2>
         <p className="hint">{t.reviewHint}</p>
-        <label className="field lens-field">
-          <span>{t.lensLabel}</span>
-          <select value={lens} onChange={(e) => setLens(e.target.value)}>
-            {lensOptions.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="lens-row">
+          <label className="field lens-field">
+            <span>{t.lensLabel}</span>
+            <select value={lens} onChange={(e) => changeLens(e.target.value)}>
+              {lensOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field constant-field">
+            <span>{t.fieldLensFactor}</span>
+            <input
+              type="number"
+              step="0.01"
+              value={constants.lensFactor}
+              readOnly={!usingPersonalConstant}
+              onChange={(e) => setConstants((c) => ({ ...c, lensFactor: e.target.value }))}
+            />
+          </label>
+          <label className="field constant-field">
+            <span>{t.fieldAConstant}</span>
+            <input
+              type="number"
+              step="0.01"
+              value={constants.aConstant}
+              readOnly={!usingPersonalConstant}
+              onChange={(e) => setConstants((c) => ({ ...c, aConstant: e.target.value }))}
+            />
+          </label>
+        </div>
         <p className="fixed-iol-note">
-          {isPersonalConstant(lens)
-            ? t.lensPersonalNote(IOL_MODEL, A_CONSTANT, LENS_FACTOR)
-            : t.lensNamedNote(lens, A_CONSTANT, LENS_FACTOR)}
+          {usingPersonalConstant
+            ? t.lensPersonalNote(IOL_MODEL)
+            : lensConstants(lens)
+              ? t.lensNamedNote(lens)
+              : `${t.lensNamedNote(lens)} ${t.lensConstantsUnknown(lens)}`}
         </p>
         <div className="eye-forms">
           <EyeForm
@@ -425,7 +503,7 @@ function App() {
       </section>
 
       <section className="actions">
-        <button type="button" onClick={handleCalculate} disabled={!plan.ok || calculating}>
+        <button type="button" onClick={handleCalculate} disabled={!canCalculate || calculating}>
           {calculating
             ? t.calculating
             : plan.ok && plan.sides.length === 1

@@ -59,3 +59,25 @@ export const BUNDLED_LENS_OPTIONS: readonly string[] = [
 export function isPersonalConstant(lens: string): boolean {
   return lens.replace(/\s+/g, " ").trim().toLowerCase() === PERSONAL_CONSTANT.toLowerCase();
 }
+
+/**
+ * The constants the calculator shows for a given lens, so the form can
+ * display them the moment that lens is picked.
+ *
+ * These are only mirrored for display: the automation selects the lens on
+ * the site and lets the site apply its own constants, so an entry that
+ * falls out of date shows a wrong number here but cannot change a
+ * calculation. Entries are added only from the calculator's own screen —
+ * never from memory.
+ */
+export const LENS_CONSTANTS: Record<string, { lensFactor: number; aConstant: number }> = {
+  "Alcon SN6ATx": { lensFactor: 2.02, aConstant: 119.26 },
+};
+
+export function lensConstants(lens: string): { lensFactor: number; aConstant: number } | undefined {
+  const wanted = lens.replace(/\s+/g, " ").trim().toLowerCase();
+  const match = Object.entries(LENS_CONSTANTS).find(
+    ([name]) => name.replace(/\s+/g, " ").trim().toLowerCase() === wanted,
+  );
+  return match?.[1];
+}

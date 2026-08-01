@@ -9,7 +9,15 @@ import {
   isRowEmpty,
   planCalculation,
   toEyeInput,
+  type LensSettings,
 } from "./eyeRow";
+
+/** The form's starting point: personal constant, this practice's values. */
+const PERSONAL: LensSettings = {
+  lens: PERSONAL_CONSTANT,
+  lensFactor: String(LENS_FACTOR),
+  aConstant: String(A_CONSTANT),
+};
 
 const COMPLETE_OD = {
   ...emptyRow("OD"),
@@ -61,7 +69,7 @@ describe("eyeRow helpers", () => {
       wtw: "11.80",
       targetRefraction: "-0.5",
     };
-    expect(toEyeInput(row, PERSONAL_CONSTANT)).toEqual({
+    expect(toEyeInput(row, PERSONAL)).toEqual({
       side: "OS",
       keratometry: { k1: 43.04, k2: 44.01 },
       biometry: { axialLength: 22.65, acd: 2.59, lensThickness: 4.71, wtw: 11.8 },
@@ -75,6 +83,16 @@ describe("eyeRow helpers", () => {
     });
   });
 
+  it("sends the constants exactly as typed in the form", () => {
+    const typed: LensSettings = { lens: PERSONAL_CONSTANT, lensFactor: "2.10", aConstant: "119.20" };
+    expect(toEyeInput(COMPLETE_OD, typed).iol).toEqual({
+      iolModel: IOL_MODEL,
+      lens: PERSONAL_CONSTANT,
+      lensFactor: 2.1,
+      aConstant: 119.2,
+    });
+  });
+
   it("swaps hand-entered K values so K1 is always the lower one", () => {
     const row = {
       ...emptyRow("OD"),
@@ -84,7 +102,7 @@ describe("eyeRow helpers", () => {
       acd: "2.79",
       targetRefraction: "0",
     };
-    const input = toEyeInput(row, PERSONAL_CONSTANT);
+    const input = toEyeInput(row, PERSONAL);
     expect(input.keratometry).toEqual({ k1: 44.16, k2: 45.06 });
   });
 
@@ -119,11 +137,11 @@ describe("eyeRow helpers", () => {
 
   it("lists this practice's constants for a personal constant, but not for a named lens", () => {
     const row = { ...COMPLETE_OD, wtw: "12.10" };
-    const personal = formatRowForClipboard(row, PERSONAL_CONSTANT);
+    const personal = formatRowForClipboard(row, PERSONAL);
     expect(personal).toContain(`A Constant: ${A_CONSTANT}`);
     expect(personal).toContain("WTW: 12.10 mm");
 
-    const named = formatRowForClipboard(row, "Alcon SN60WF");
+    const named = formatRowForClipboard(row, { ...PERSONAL, lens: "Alcon SN60WF" });
     expect(named).toContain("Lens: Alcon SN60WF");
     expect(named).not.toContain("A Constant");
     expect(named).not.toContain("Lens Factor");

@@ -32,8 +32,16 @@ function validateEye(eye: unknown, side: EyeSide): string | null {
   if (e.iol?.lens !== undefined && (typeof e.iol.lens !== "string" || e.iol.lens.trim() === "")) {
     return `${side}: iol.lens must be a non-empty string when present`;
   }
+  // The bands the calculator prints beside its own fields; outside them the
+  // site would reject the value anyway, so the run is refused up front.
   if (!isFiniteNumber(e.iol?.aConstant)) return `${side}: iol.aConstant must be a number`;
+  if (e.iol.aConstant < 112 || e.iol.aConstant > 125) {
+    return `${side}: iol.aConstant must be between 112 and 125`;
+  }
   if (!isFiniteNumber(e.iol?.lensFactor)) return `${side}: iol.lensFactor must be a number`;
+  if (e.iol.lensFactor < -2 || e.iol.lensFactor > 5) {
+    return `${side}: iol.lensFactor must be between -2 and 5`;
+  }
 
   return null;
 }

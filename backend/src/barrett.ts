@@ -14,13 +14,14 @@ export const CALCULATOR_URL = "https://calc.apacrs.org/barrett_universal2105/";
  * before OS's "(L)" in document order.
  *
  * The lens dropdown, Lens Factor and A Constant are form-wide singles, and
- * the form reads "Lens Factor ... or A Constant" — the two constants are
- * alternatives, so only Lens Factor is filled, and only when the run uses
- * the practice's own personal constant; the user's verified manual run
- * shows the site pairing Lens Factor 1.57 with A Constant 118.4, so the
- * derived value matches. Choosing a named lens instead leaves both boxes to
- * the site, which fills them with that lens's constants — none of those
- * constants are transcribed into this codebase, where they could go stale.
+ * the form reads "Lens Factor ... or A Constant" — the page derives one
+ * from the other. Both are filled on a personal-constant run, A Constant
+ * first so the Lens Factor is written last (that ordering is what the
+ * end-to-end verified run did); if the page rewrites either, the value it
+ * settled on is read back and reported rather than treated as an error.
+ * Choosing a named lens instead leaves both boxes to the site, which fills
+ * them with that lens's constants — none of those constants are
+ * transcribed into this codebase, where they could go stale.
  * Patient Name is required by the site before
  * it will render the "Recommended IOL" summary, so it is always filled
  * with a neutral "-" placeholder — never real patient data. Doctor Name
@@ -41,22 +42,27 @@ const LENS_FACTOR_LABELS = ["Lens Factor"] as const;
 const A_CONSTANT_LABELS = ["A Constant", "A-Constant"] as const;
 
 /**
- * The band a modern IOL's A constant falls in. Nothing else the form holds
- * comes close (axial lengths ~22, K ~44, ACD ~3, lens factors ~1-3), which
- * makes the value itself a reliable way to tell the constants apart — the
- * form labels them together as "Lens Factor ... or A Constant", so a
- * label-anchored lookup alone can land on the wrong box.
+ * The bands the form prints beside its two constants: "(-2.0~5.0)" for the
+ * Lens Factor and "(112~125)" for the A Constant. They do more than reject
+ * bad input — the form labels the pair together ("Lens Factor ... or A
+ * Constant"), so a label-anchored lookup can land on the wrong box, and the
+ * value itself is what tells them apart. Nothing else on the form comes
+ * near the A-constant band (axial lengths ~22, K ~44, ACD ~3).
  */
-const A_CONSTANT_RANGE = { min: 100, max: 130 } as const;
+const CONSTANT_RANGES = {
+  lensFactor: { min: -2, max: 5 },
+  aConstant: { min: 112, max: 125 },
+} as const;
 
-function looksLikeAConstant(value: string): boolean {
+function inConstantRange(value: string, range: { min: number; max: number }): boolean {
   const parsed = Number(value);
   return (
-    value.trim() !== "" &&
-    Number.isFinite(parsed) &&
-    parsed >= A_CONSTANT_RANGE.min &&
-    parsed <= A_CONSTANT_RANGE.max
+    value.trim() !== "" && Number.isFinite(parsed) && parsed >= range.min && parsed <= range.max
   );
+}
+
+function looksLikeAConstant(value: string): boolean {
+  return inConstantRange(value, CONSTANT_RANGES.aConstant);
 }
 
 /**
@@ -91,6 +97,13 @@ interface FilledEntry {
   field: string;
   locator: Locator;
   expected: string;
+  /**
+   * Set for the two constants only. The site derives one from the other, so
+   * a value that changed after being typed is the page doing its job — but
+   * a value that left its own band means the text landed in the wrong box,
+   * which still has to stop the run.
+   */
+  tolerate?: { min: number; max: number };
 }
 
 /** Fills a located control regardless of whether it's a text input, a <select>, or a radio/checkbox. */
@@ -350,21 +363,88 @@ export async function fetchLensOptions(): Promise<string[]> {
   }
 }
 
-async function fillLensFactor(
+/**
+ * Types both constants for a personal-constant run.
+ *
+ * A Constant goes in first and Lens Factor second, deliberately: the page
+ * derives one from the other, and Lens Factor last preserves the exact
+ * behaviour of the run that was verified end-to-end against the live site.
+ * Whatever the page settles on is read back afterwards and reported.
+ */
+async function fillConstants(
   root: SearchRoot,
   request: CalculateRequest,
   filled: FilledEntry[],
 ): Promise<string[]> {
-  // Only Lens Factor — see the header comment for why A Constant stays empty.
   // Validation guarantees at least one eye, and that both carry the same IOL.
   const anyEye = request.od ?? request.os;
   if (!anyEye) return ["lensFactor"];
-  const value = String(anyEye.iol.lensFactor);
-  const control = await locateByLabelText(root, LENS_FACTOR_LABELS, 0);
-  if (!control) return ["lensFactor"];
-  await setLocatorValue(control, value);
-  filled.push({ field: "lensFactor", locator: control, expected: value });
-  return [];
+
+  const missing: string[] = [];
+  const targets = [
+    {
+      field: "aConstant",
+      labels: A_CONSTANT_LABELS,
+      value: String(anyEye.iol.aConstant),
+      tolerate: CONSTANT_RANGES.aConstant,
+    },
+    {
+      field: "lensFactor",
+      labels: LENS_FACTOR_LABELS,
+      value: String(anyEye.iol.lensFactor),
+      tolerate: CONSTANT_RANGES.lensFactor,
+    },
+  ] as const;
+
+  for (const target of targets) {
+    const control = await locateConstantInput(root, target.labels, target.tolerate);
+    if (!control) {
+      missing.push(target.field);
+      continue;
+    }
+    await setLocatorValue(control, target.value);
+    filled.push({
+      field: target.field,
+      locator: control,
+      expected: target.value,
+      tolerate: target.tolerate,
+    });
+  }
+  return missing;
+}
+
+/**
+ * Finds one of the two constant boxes. Both labels live in the same node
+ * ("Lens Factor ... or A Constant"), so the label-anchored control is
+ * accepted only when the value it already holds belongs to that constant's
+ * band; otherwise the search walks the following inputs for one that does.
+ */
+async function locateConstantInput(
+  root: SearchRoot,
+  labels: readonly string[],
+  range: { min: number; max: number },
+): Promise<Locator | null> {
+  const labelled = await locateByLabelText(root, labels, 0);
+  if (labelled) {
+    const current = (await labelled.inputValue().catch(() => "")).trim();
+    // An empty box is unclaimed — nothing contradicts the label there.
+    if (current === "" || inConstantRange(current, range)) return labelled;
+  }
+
+  for (const label of labels) {
+    const anchors = root.getByText(label, { exact: false });
+    if ((await anchors.count()) === 0) continue;
+    const following = anchors
+      .first()
+      .locator("xpath=following::input[not(@type='hidden')]");
+    const count = Math.min(await following.count(), 4);
+    for (let i = 0; i < count; i++) {
+      const candidate = following.nth(i);
+      const value = (await candidate.inputValue().catch(() => "")).trim();
+      if (inConstantRange(value, range)) return candidate;
+    }
+  }
+  return labelled;
 }
 
 /**
@@ -428,7 +508,10 @@ async function verifyFills(filled: FilledEntry[]): Promise<string[]> {
     const actual = await entry.locator.inputValue().catch(() => "(unreadable)");
     const same =
       actual === entry.expected ||
-      (Number.isFinite(Number(actual)) && Number(actual) === Number(entry.expected));
+      (Number.isFinite(Number(actual)) && Number(actual) === Number(entry.expected)) ||
+      // The constants are linked on the page; a value the site recalculated
+      // is fine as long as it is still a value of the right kind.
+      (entry.tolerate !== undefined && inConstantRange(actual, entry.tolerate));
     if (!same) {
       mismatches.push(`${entry.field}: wrote "${entry.expected}" but field now contains "${actual}"`);
     }
@@ -668,7 +751,7 @@ async function attemptCalculation(
       ...(await fillPatientPlaceholder(formRoot, filled)),
       // A named lens brings the manufacturer's own constants with it — typing
       // this practice's Lens Factor over them would calculate the wrong lens.
-      ...(usePersonalConstant ? await fillLensFactor(formRoot, request, filled) : []),
+      ...(usePersonalConstant ? await fillConstants(formRoot, request, filled) : []),
       ...(request.od ? await fillEye(formRoot, request.od, 0, filled) : []),
       ...(request.os ? await fillEye(formRoot, request.os, 1, filled) : []),
     ];
@@ -699,6 +782,25 @@ async function attemptCalculation(
       lensFactor: await readLensFactor(formRoot),
       aConstant: await readAConstant(formRoot),
     };
+    // The page derives one constant from the other, so a value typed in can
+    // come back changed. That is the site's answer and it is what the
+    // calculation uses — but the clinician has to be told it happened.
+    const requestedIol = usePersonalConstant ? (request.od ?? request.os)?.iol : undefined;
+    const rewritten = [
+      requestedIol && lensUsed.lensFactor !== undefined &&
+      Number(lensUsed.lensFactor) !== requestedIol.lensFactor
+        ? `Lens Factor ${requestedIol.lensFactor} → ${lensUsed.lensFactor}`
+        : null,
+      requestedIol && lensUsed.aConstant !== undefined &&
+      Number(lensUsed.aConstant) !== requestedIol.aConstant
+        ? `A Constant ${requestedIol.aConstant} → ${lensUsed.aConstant}`
+        : null,
+    ].filter((part): part is string => part !== null);
+    const constantsWarning =
+      rewritten.length > 0
+        ? `The calculator recalculated the constants you entered (${rewritten.join("; ")}) — ` +
+          `it derives one from the other, and the results below use its values.`
+        : undefined;
 
     await clickCalculate(formRoot);
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
@@ -732,7 +834,13 @@ async function attemptCalculation(
       od: request.od !== undefined,
       os: request.os !== undefined,
     });
-    return { resultsText: text, recommended: { od, os }, tables, lens: lensUsed };
+    return {
+      resultsText: text,
+      recommended: { od, os },
+      tables,
+      lens: lensUsed,
+      warning: constantsWarning,
+    };
   } finally {
     await browser.close();
   }

@@ -231,9 +231,27 @@ button.secondary,
   color: #1a1f27;
 }
 
-.lens-field {
-  max-width: 420px;
+/* Lens then its two constants, in the same order the calculator has them. */
+.lens-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
   margin-bottom: 0.8rem;
+}
+
+.lens-field {
+  flex: 1 1 260px;
+  max-width: 420px;
+}
+
+.constant-field {
+  flex: 0 1 130px;
+}
+
+.constant-field input[readonly] {
+  background: #eef2f7;
+  color: #5b6470;
 }
 
 .field-group {

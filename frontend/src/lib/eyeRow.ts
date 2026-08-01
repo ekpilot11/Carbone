@@ -1,4 +1,4 @@
-import { A_CONSTANT, IOL_MODEL, LENS_FACTOR } from "./constants";
+import { IOL_MODEL } from "./constants";
 import { isPersonalConstant } from "./lenses";
 import type { BiometryReading, EyeInput, EyeSide, KeratometryReading } from "./types";
 
@@ -92,12 +92,19 @@ function optionalNumber(value: string): number | undefined {
   return value.trim() === "" ? undefined : Number(value);
 }
 
+/** The form-wide IOL settings: the lens dropdown plus its two constants. */
+export interface LensSettings {
+  lens: string;
+  lensFactor: string;
+  aConstant: string;
+}
+
 /**
  * Applies the K1-is-lower convention even to hand-edited values: if the
  * clinician typed them the other way round, they're swapped rather than
  * sent through mislabeled.
  */
-export function toEyeInput(row: EyeRowState, lens: string): EyeInput {
+export function toEyeInput(row: EyeRowState, settings: LensSettings): EyeInput {
   const kValues = [Number(row.k1), Number(row.k2)];
   const k1 = Math.min(...kValues);
   const k2 = Math.max(...kValues);
@@ -113,7 +120,12 @@ export function toEyeInput(row: EyeRowState, lens: string): EyeInput {
     manual: { targetRefraction: Number(row.targetRefraction) },
     // The constants ride along for a personal-constant run; for a named lens
     // the calculator supplies its own and these are ignored.
-    iol: { iolModel: IOL_MODEL, lens, aConstant: A_CONSTANT, lensFactor: LENS_FACTOR },
+    iol: {
+      iolModel: IOL_MODEL,
+      lens: settings.lens,
+      aConstant: Number(settings.aConstant),
+      lensFactor: Number(settings.lensFactor),
+    },
   };
 }
 
@@ -123,8 +135,8 @@ export function toEyeInput(row: EyeRowState, lens: string): EyeInput {
  * they actually apply — copying them under a named lens would invite
  * typing them over the site's values.
  */
-export function formatRowForClipboard(row: EyeRowState, lens: string): string {
-  const personal = isPersonalConstant(lens);
+export function formatRowForClipboard(row: EyeRowState, settings: LensSettings): string {
+  const personal = isPersonalConstant(settings.lens);
   return [
     `${row.side}:`,
     `  Measured K1: ${row.k1 || "?"} D`,
@@ -133,10 +145,10 @@ export function formatRowForClipboard(row: EyeRowState, lens: string): string {
     `  Optical ACD: ${row.acd || "?"} mm`,
     row.lensThickness ? `  Lens Thickness: ${row.lensThickness} mm` : null,
     row.wtw ? `  WTW: ${row.wtw} mm` : null,
-    `  Lens: ${lens}`,
+    `  Lens: ${settings.lens}`,
     `  IOL Optic: ${IOL_MODEL}`,
-    personal ? `  A Constant: ${A_CONSTANT}` : null,
-    personal ? `  Lens Factor: ${LENS_FACTOR}` : null,
+    personal ? `  A Constant: ${settings.aConstant}` : null,
+    personal ? `  Lens Factor: ${settings.lensFactor}` : null,
     `  Refraction (target): ${row.targetRefraction || "?"} D`,
   ]
     .filter((line): line is string => line !== null)

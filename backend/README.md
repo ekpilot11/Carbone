@@ -129,18 +129,26 @@ Two rules keep a wrong lens from producing a plausible wrong power:
 - A name that doesn't match any option **aborts the run** and the error
   lists every option the site actually offers. It never falls back to
   another lens.
-- With a named lens, Lens Factor is **not** filled — the site's own value
-  for that lens stands. Only a "Personal Constant" run types this
-  practice's 1.57. No manufacturer constants are transcribed into this
-  codebase; whatever the site held at submit time is read back and
+- With a named lens, neither constant is filled — the site's own values
+  for that lens stand. A "Personal Constant" run types both, A Constant
+  first so that Lens Factor is written last (the ordering of the run that
+  was verified end-to-end). No manufacturer constants are transcribed into
+  this codebase; whatever the site held at submit time is read back and
   returned as `lens.lensFactor` / `lens.aConstant`, the only record of
   what actually produced the numbers.
+
+The page derives one constant from the other, so a typed value can come
+back changed. That is not treated as a misfilled field: verification
+accepts a rewritten constant as long as it still falls in its own band, and
+the response carries a `warning` naming what the site changed. Requests are
+range-checked first (Lens Factor -2 to 5, A Constant 112 to 125 — the bands
+the form prints beside its fields).
 
 Reading the A Constant back needs care, because the form labels its two
 constants in one breath ("Lens Factor ... or A Constant") and a
 label-anchored lookup can land on the Lens Factor box. Both the labelled
 lookup and the fallback (scan the form's values) accept a number only if it
-falls in the A-constant band of 100-130 — no other field on the form comes
+falls in the A-constant band above — no other field on the form comes
 near it — and an ambiguous read is reported as unknown rather than guessed.
 A wrong constant printed on a clinical record is worse than a missing one.
 

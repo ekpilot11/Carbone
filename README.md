@@ -71,15 +71,30 @@ nothing is persisted anywhere.
   back the results, and `GET /api/lenses` reads the calculator's lens list
   so the app's dropdown matches the site exactly.
 
-## Lens choice
+## Lens and constants
 
-The lens dropdown mirrors the calculator's own "Personal Constant" menu.
-Picking a lens here makes the automation pick the same option on the site,
-so **the site applies that lens's constants itself** — no manufacturer
-A-constants are stored in this app, where they could quietly go out of
-date. "Personal Constant" (the default) is the one case where this
-practice's own A-Constant 118.4 / Lens Factor 1.57 are sent. Whichever was
-used is read back off the page and shown with the results.
+The form carries the calculator's three IOL controls: the lens dropdown and
+the Lens Factor / A Constant boxes beside it. Both constants are typed in —
+never read from a photo — and start on this practice's own values (1.57 and
+118.4), with the dropdown on "Personal Constant".
+
+- **Nothing changed** → the automation types 1.57 and 118.4 into the site's
+  own boxes.
+- **Either constant edited** → the automation types whatever is in the
+  boxes. They are range-checked against the bands the site prints beside
+  them (Lens Factor -2 to 5, A Constant 112 to 125) before a run starts.
+- **A lens picked from the dropdown** → the automation only selects that
+  lens on the site, and **the site applies that lens's own constants**. The
+  boxes then show that lens's values for reference and stop accepting edits;
+  switch back to "Personal Constant" to type constants again.
+
+No manufacturer constants are used for the calculation itself — the values
+this app shows for a named lens are mirrored for display only, so an entry
+that goes out of date is a wrong number on screen, never a wrong
+calculation. Whichever constants the site actually held are read back off
+the page and reported with the results and on the PDF. The two are linked on
+the site (it derives one from the other), so if it rewrites what was typed,
+the results say so.
 
 If a lens name ever stops matching the site's list, the run stops and the
 error names every option the site offers — it never silently substitutes a
