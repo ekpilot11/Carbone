@@ -1,24 +1,25 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { chromium, type Frame, type Locator, type Page } from "playwright";
 import type { CalculateRequest, CalculateResponse, EyeInput } from "./types.js";
 
 export const CALCULATOR_URL = "https://calc.apacrs.org/barrett_universal2105/";
 
 /**
- * Field labels transcribed from a screenshot of the live calculator's
- * "Patient Data" tab (July 2026). The form is a single page for both eyes:
- * each measurement row has the label once per eye column — OD's "(R)" input
- * appears before OS's "(L)" in document order — while Lens Factor and
- * A Constant are form-wide singles (the form reads "Lens Factor ... or
- * A Constant": entering one may derive the other, so A Constant is filled
- * before Lens Factor to let Lens Factor win). Doctor/Patient Name and
- * Patient ID are left blank on purpose — no PHI is ever sent.
+ * Field labels transcribed from screenshots of the live calculator
+ * ("Barrett Universal II Formula V1.05", July 2026). The form is a single
+ * page for both eyes — no frames (confirmed by a live diagnostic run):
+ * each measurement row has the label once per eye column, OD's "(R)" input
+ * before OS's "(L)" in document order.
  *
- * A first live run failed to find ANY of these labels on the top-level
- * page, so the form likely renders inside a frame or behind the "Patient
- * Data" tab — lookups now search every frame, retry while the page settles,
- * and report a diagnostic snapshot of what was actually served when they
- * still fail. `npm run inspect` from an unrestricted machine remains the
- * definitive way to pin selectors (see backend/README.md).
+ * Lens Factor and A Constant are form-wide singles and the form reads
+ * "Lens Factor ... or A Constant" — they are alternatives, so only Lens
+ * Factor is filled; the user's verified manual run shows the site pairing
+ * Lens Factor 1.57 with A Constant 118.4, so the derived value matches
+ * this practice's constants. Doctor Name and Patient ID are left blank
+ * (they were blank on the successful manual run); Patient Name gets a
+ * neutral "-" placeholder only if a first Calculate attempt yields no
+ * results — never real patient data.
  */
 const PER_EYE_FIELDS = {
   axialLength: ["Axial Length"],
@@ -29,10 +30,7 @@ const PER_EYE_FIELDS = {
   lensThickness: ["Lens Thickness"],
 } as const;
 
-const SINGLE_FIELDS = {
-  aConstant: ["A Constant"],
-  lensFactor: ["Lens Factor"],
-} as const;
+const LENS_FACTOR_LABELS = ["Lens Factor"] as const;
 
 /** Label text that must exist wherever the form actually renders. */
 const FORM_ANCHOR = "Axial Length";
@@ -40,21 +38,21 @@ const FORM_ANCHOR = "Axial Length";
 /** Text that only appears once the calculation has actually run. */
 const RESULTS_ANCHOR = /Recommended IOL/i;
 
-/**
- * The site appears to require the identity fields to be non-empty before
- * Calculate does anything. These get a neutral placeholder — never real
- * patient data (the app's no-PHI rule).
- */
-const IDENTITY_FIELDS: readonly (readonly string[])[] = [
-  ["Doctor Name"],
-  ["Patient Name"],
-  ["Patient ID"],
-];
+const IDENTITY_FIELDS: readonly (readonly string[])[] = [["Patient Name"]];
 const IDENTITY_PLACEHOLDER = "-";
 
+/** Where failure screenshots/HTML dumps land; contains clinical numbers only, never PHI. */
+const DIAGNOSTICS_DIR = "diagnostics";
+
 type PerEyeField = keyof typeof PER_EYE_FIELDS;
-type SingleField = keyof typeof SINGLE_FIELDS;
 type SearchRoot = Page | Frame;
+
+/** A control that was filled, kept so the value can be read back and verified. */
+interface FilledEntry {
+  field: string;
+  locator: Locator;
+  expected: string;
+}
 
 /** Fills a located control regardless of whether it's a text input, a <select>, or a radio/checkbox. */
 async function setLocatorValue(locator: Locator, value: string): Promise<void> {
@@ -122,12 +120,28 @@ async function describePage(page: Page): Promise<string> {
   const bodyText = await page
     .locator("body")
     .innerText({ timeout: 3000 })
-    .then((t) => t.replace(/\s+/g, " ").trim().slice(0, 300))
+    .then((t) => t.replace(/\s+/g, " ").trim().slice(0, 800))
     .catch(() => "(unreadable)");
   return (
     `page title: "${title}"; url: ${page.url()}; ` +
     `frames: [${frameUrls.join(", ") || "none"}]; visible text starts with: "${bodyText}"`
   );
+}
+
+/** Saves a full-page screenshot + HTML dump for offline inspection; returns their paths. */
+async function saveDiagnostics(page: Page, tag: string): Promise<string> {
+  try {
+    const dir = path.resolve(DIAGNOSTICS_DIR);
+    await mkdir(dir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const pngPath = path.join(dir, `${tag}-${stamp}.png`);
+    const htmlPath = path.join(dir, `${tag}-${stamp}.html`);
+    await page.screenshot({ path: pngPath, fullPage: true });
+    await writeFile(htmlPath, await page.content());
+    return `saved page screenshot and HTML to ${pngPath} / ${htmlPath}`;
+  } catch (err) {
+    return `couldn't save diagnostics files (${err instanceof Error ? err.message : err})`;
+  }
 }
 
 /**
@@ -160,7 +174,12 @@ async function locateByLabelText(
   return null;
 }
 
-async function fillEye(root: SearchRoot, eye: EyeInput, eyeIndex: 0 | 1): Promise<string[]> {
+async function fillEye(
+  root: SearchRoot,
+  eye: EyeInput,
+  eyeIndex: 0 | 1,
+  filled: FilledEntry[],
+): Promise<string[]> {
   const attempts: Array<[PerEyeField, string]> = [
     ["axialLength", String(eye.biometry.axialLength)],
     ["k1", String(eye.keratometry.k1)],
@@ -177,6 +196,7 @@ async function fillEye(root: SearchRoot, eye: EyeInput, eyeIndex: 0 | 1): Promis
     const control = await locateByLabelText(root, PER_EYE_FIELDS[field], eyeIndex);
     if (control) {
       await setLocatorValue(control, value);
+      filled.push({ field: `${eye.side} ${field}`, locator: control, expected: value });
     } else {
       missing.push(`${eye.side} ${field}`);
     }
@@ -184,23 +204,37 @@ async function fillEye(root: SearchRoot, eye: EyeInput, eyeIndex: 0 | 1): Promis
   return missing;
 }
 
-async function fillSingles(root: SearchRoot, request: CalculateRequest): Promise<string[]> {
-  // Both eyes carry identical fixed IOL constants; validated upstream.
-  const attempts: Array<[SingleField, string]> = [
-    ["aConstant", String(request.od.iol.aConstant)],
-    ["lensFactor", String(request.od.iol.lensFactor)],
-  ];
+async function fillLensFactor(
+  root: SearchRoot,
+  request: CalculateRequest,
+  filled: FilledEntry[],
+): Promise<string[]> {
+  // Only Lens Factor — see the header comment for why A Constant stays empty.
+  const value = String(request.od.iol.lensFactor);
+  const control = await locateByLabelText(root, LENS_FACTOR_LABELS, 0);
+  if (!control) return ["lensFactor"];
+  await setLocatorValue(control, value);
+  filled.push({ field: "lensFactor", locator: control, expected: value });
+  return [];
+}
 
-  const missing: string[] = [];
-  for (const [field, value] of attempts) {
-    const control = await locateByLabelText(root, SINGLE_FIELDS[field], 0);
-    if (control) {
-      await setLocatorValue(control, value);
-    } else {
-      missing.push(field);
+/**
+ * Reads every filled control back and reports any whose value differs
+ * numerically from what was written — the guard against values silently
+ * landing in the wrong boxes (or being wiped by the page's own scripts).
+ */
+async function verifyFills(filled: FilledEntry[]): Promise<string[]> {
+  const mismatches: string[] = [];
+  for (const entry of filled) {
+    const actual = await entry.locator.inputValue().catch(() => "(unreadable)");
+    const same =
+      actual === entry.expected ||
+      (Number.isFinite(Number(actual)) && Number(actual) === Number(entry.expected));
+    if (!same) {
+      mismatches.push(`${entry.field}: wrote "${entry.expected}" but field now contains "${actual}"`);
     }
   }
-  return missing;
+  return mismatches;
 }
 
 async function clickCalculate(root: SearchRoot): Promise<void> {
@@ -284,6 +318,15 @@ export async function runBarrettCalculation(request: CalculateRequest): Promise<
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage({ userAgent: USER_AGENT });
+
+    // Old ASP.NET validators often report problems via alert() popups that
+    // never appear in the DOM — capture them so failures can name the reason.
+    const dialogMessages: string[] = [];
+    page.on("dialog", (dialog) => {
+      dialogMessages.push(dialog.message());
+      dialog.accept().catch(() => {});
+    });
+
     await page.goto(CALCULATOR_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
 
     const formRoot = await findFormRoot(page, 15000);
@@ -296,10 +339,11 @@ export async function runBarrettCalculation(request: CalculateRequest): Promise<
       );
     }
 
+    const filled: FilledEntry[] = [];
     const missing = [
-      ...(await fillSingles(formRoot, request)),
-      ...(await fillEye(formRoot, request.od, 0)),
-      ...(await fillEye(formRoot, request.os, 1)),
+      ...(await fillLensFactor(formRoot, request, filled)),
+      ...(await fillEye(formRoot, request.od, 0, filled)),
+      ...(await fillEye(formRoot, request.os, 1, filled)),
     ];
 
     if (missing.length > 0) {
@@ -310,12 +354,23 @@ export async function runBarrettCalculation(request: CalculateRequest): Promise<
       );
     }
 
+    // Never submit values that didn't land where they were aimed — a wrong
+    // box here means a wrong surgical calculation downstream.
+    const mismatches = await verifyFills(filled);
+    if (mismatches.length > 0) {
+      const saved = await saveDiagnostics(page, "misfill");
+      throw new Error(
+        `Aborted before calculating: some values did not end up in the fields they were aimed at — ` +
+          `${mismatches.join("; ")}. The selector heuristics need adjusting (${saved}; see ` +
+          `backend/README.md).`,
+      );
+    }
+
     await clickCalculate(formRoot);
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
 
-    // If no results appeared, the site's validators most likely blocked the
-    // submit over empty identity fields — fill neutral placeholders (never
-    // real patient data) and try once more.
+    // If no results appeared, the site may want a non-empty patient name —
+    // fill a neutral placeholder (never real patient data) and try once more.
     let resultsRoot = await findResultsRoot(page, 8000);
     if (!resultsRoot) {
       const retryRoot = (await findFormRoot(page, 3000)) ?? formRoot;
@@ -326,10 +381,14 @@ export async function runBarrettCalculation(request: CalculateRequest): Promise<
     }
 
     if (!resultsRoot) {
+      const saved = await saveDiagnostics(page, "no-results");
+      const dialogNote = dialogMessages.length
+        ? ` The site raised these popup messages: "${dialogMessages.join('", "')}".`
+        : " No popup messages were raised.";
       throw new Error(
-        `The form was filled and Calculate was clicked, but no "Recommended IOL" results ever ` +
-          `appeared. The site may be showing a validation message instead — what it displayed: ` +
-          `${await describePage(page)}.`,
+        `The form was filled (all values verified in their fields) and Calculate was clicked, but no ` +
+          `"Recommended IOL" results ever appeared.${dialogNote} What the page displayed — ` +
+          `${await describePage(page)}. ${saved} — open the .png to see the exact page state.`,
       );
     }
 

@@ -4,11 +4,12 @@
  *   npm run inspect
  *
  * It dumps every form field and button on the live Barrett Universal II
- * calculator page — searching every frame, since a live run showed the
- * top-level page may not contain the form at all — so the selector maps in
- * src/barrett.ts can be corrected. Paste its JSON output when reporting
- * automation failures.
+ * calculator page (searching every frame) so the selector maps in
+ * src/barrett.ts can be corrected. Output goes to the console AND to
+ * inspect-output.json + inspect-page.html in the backend folder — attach
+ * those files when reporting automation failures.
  */
+import { writeFile } from "node:fs/promises";
 import { chromium, type Frame, type Page } from "playwright";
 import { CALCULATOR_URL } from "../src/barrett.js";
 
@@ -46,13 +47,19 @@ async function dumpRoot(root: Page | Frame) {
     }),
   );
 
-  const buttons: (string | null)[] = await root.$$eval("button", (elements) =>
-    elements.map((el) => el.textContent?.trim() ?? null),
+  const buttons: (string | null)[] = await root.$$eval(
+    'button, input[type="submit"], input[type="button"]',
+    (elements) =>
+      elements.map((el) =>
+        el.tagName.toLowerCase() === "button"
+          ? (el.textContent?.trim() ?? null)
+          : ((el as HTMLInputElement).value ?? null),
+      ),
   );
 
-  const bodyTextStart = await root.$eval("body", (el) =>
-    (el.innerText ?? "").replace(/\s+/g, " ").trim().slice(0, 400),
-  );
+  const bodyTextStart = await root
+    .$eval("body", (el) => (el.innerText ?? "").replace(/\s+/g, " ").trim().slice(0, 400))
+    .catch(() => "(unreadable)");
 
   return { fields, buttons, bodyTextStart };
 }
@@ -60,16 +67,24 @@ async function dumpRoot(root: Page | Frame) {
 async function main() {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
-  await page.goto(CALCULATOR_URL, { waitUntil: "networkidle", timeout: 45000 });
+  // domcontentloaded, not networkidle: some sites keep connections open
+  // forever, which times the stricter wait out.
+  await page.goto(CALCULATOR_URL, { waitUntil: "domcontentloaded", timeout: 45000 });
   // Give any late-loading frames/tabs a moment to settle.
   await page.waitForTimeout(3000);
 
-  const report = {
+  const report: {
+    url: string;
+    finalUrl: string;
+    title: string;
+    mainPage: Awaited<ReturnType<typeof dumpRoot>>;
+    frames: { url: string; dump: Awaited<ReturnType<typeof dumpRoot>> }[];
+  } = {
     url: CALCULATOR_URL,
     finalUrl: page.url(),
     title: await page.title(),
     mainPage: await dumpRoot(page),
-    frames: [] as { url: string; dump: Awaited<ReturnType<typeof dumpRoot>> }[],
+    frames: [],
   };
 
   for (const frame of page.frames()) {
@@ -84,11 +99,25 @@ async function main() {
     }
   }
 
-  console.log(JSON.stringify(report, null, 2));
+  const json = JSON.stringify(report, null, 2);
+  await writeFile("inspect-output.json", json).catch((err) => {
+    console.error(`(couldn't write inspect-output.json: ${err})`);
+  });
+  await writeFile("inspect-page.html", await page.content()).catch((err) => {
+    console.error(`(couldn't write inspect-page.html: ${err})`);
+  });
+
+  console.log(json);
+  console.log("\nSaved to inspect-output.json and inspect-page.html in the backend folder.");
   await browser.close();
 }
 
 main().catch((err) => {
-  console.error(err);
+  console.error("Inspect failed:", err);
+  console.error(
+    "\nIf this is a timeout or TLS error, check that this machine can open " +
+      CALCULATOR_URL +
+      " in a normal browser. Paste the full error above when reporting.",
+  );
   process.exitCode = 1;
 });

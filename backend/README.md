@@ -76,14 +76,24 @@ Environment: `PORT` (default `4000`).
 
 ## Notes
 
-- A live run showed the form fills fine but Calculate silently does
-  nothing until the identity fields are non-empty. The automation first
-  clicks Calculate as-is; if no "Recommended IOL" text appears, it fills
-  Doctor Name / Patient Name / Patient ID with a neutral "-" placeholder
-  (never real patient data) and clicks once more. Results are then
-  scraped from the "Right Eye (OD)" panel onward, and the per-eye
-  "Recommended IOL" powers are parsed into the response's `recommended`
-  field.
+- The form reads "Lens Factor ... or A Constant" — alternatives, so only
+  Lens Factor is filled (the user's verified manual run shows the site
+  pairing Lens Factor 1.57 with A Constant 118.4, this practice's exact
+  constants). Filling both is suspected of silently blocking Calculate.
+- After filling, every value is read back and compared; if anything landed
+  in the wrong box the run aborts *before* clicking Calculate — a wrong box
+  means a wrong surgical calculation.
+- If Calculate yields no results, Patient Name gets a neutral "-"
+  placeholder (never real patient data) and Calculate is clicked once
+  more; Doctor Name / Patient ID stay blank (they were blank on the
+  successful manual run). alert()-style validator popups are captured and
+  included in error messages.
+- On failure, a full-page screenshot + HTML dump land in
+  `backend/diagnostics/` (gitignored; contains the entered clinical
+  numbers, never PHI) — the error message names the exact files.
+- Results are scraped from the "Right Eye (OD)" panel onward, and the
+  per-eye "Recommended IOL" powers are parsed into the response's
+  `recommended` field.
 - No database, no request logging of clinical values — the process is
   stateless by design (see the privacy section in the root README).
 - CORS is open (`cors()` with defaults) since this is meant to sit behind
