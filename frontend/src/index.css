@@ -1,5 +1,8 @@
 :root {
-  color-scheme: light dark;
+  /* The app is styled light throughout. Left as "light dark", a machine in
+     dark mode renders form controls (and a <select>'s own dropdown list)
+     with white text on the white background these styles set. */
+  color-scheme: light;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;

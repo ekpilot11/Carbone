@@ -12,9 +12,11 @@ import { inRange, RANGES } from "./ranges.js";
  * simply comes back empty.
  *
  * The tradeoff, and the reason this is opt-in: the photo leaves the
- * clinician's machine. The prompt asks for clinical numbers only and
- * forbids returning any patient identifier, but the image itself is still
- * transmitted — see the privacy sections of the READMEs.
+ * clinician's machine — see the privacy sections of the READMEs. The
+ * prompt asks for the clinical numbers plus the patient's name (which
+ * heads the clinic's own PDF record, and is never sent on to the
+ * calculator); every other identifier — ID, CPF, date of birth, address,
+ * phone — is explicitly excluded.
  */
 
 export interface KeratometryScan {
@@ -29,22 +31,15 @@ export interface BiometryScan {
   acd: number;
 }
 
-/**
- * The calculator's "Optional:" block. Kept separate from the required
- * biometry because either value can appear on its own — printed on the
- * A-scan, on the topography strip, or not at all — and an eye whose
- * axial length is unreadable can still contribute a legible WTW.
- */
-export interface OptionalScan {
-  side: "OD" | "OS";
-  lensThickness?: number;
-  wtw?: number;
-}
-
 export interface ScanResponse {
   keratometry: KeratometryScan[];
   biometry: BiometryScan[];
-  optional: OptionalScan[];
+  /**
+   * The patient's name, when it is printed legibly on the page. Requested
+   * so the PDF record can be headed automatically; it is never sent to the
+   * calculator, and nothing else identifying is read (see PROMPT).
+   */
+  patientName?: string;
   /** Set when the model read the page but some values failed the plausibility check. */
   warning?: string;
 }
@@ -56,7 +51,7 @@ const PROMPT = `This photograph shows ophthalmology exam printouts. It may conta
 keratometry/topography strip, an A-scan biometry printout, or both — often
 side by side, and possibly alongside unrelated paperwork.
 
-Extract three sets of measurements.
+Extract the patient's name and two sets of measurements.
 
 KERATOMETRY (from the "Sim K's" strip, if present):
 - "<R>" marks the right eye (report as OD); "<L>" marks the left eye (report
@@ -82,26 +77,20 @@ BIOMETRY (from the A-scan printout, if present):
   the second is the left eye (OS); this device always prints the right eye
   first.
 
-OPTIONAL VALUES (only if they are actually printed):
-- Lens thickness, in mm (typically 3-6): the "LENS" line of the A-scan
-  summary, or a field labelled LT / Lens Thickness. Report it as
-  lensThickness. Do not confuse it with the VITR (vitreous) line.
-- White-to-white corneal diameter, in mm (typically 10.5-13): a field
-  labelled WTW, W-W, or "white to white", on either printout. Report it as
-  wtw.
-- Report one entry per eye, containing whichever of the two values that eye
-  actually shows. Omit the entry entirely when neither value is printed for
-  that eye — these are genuinely optional, and a plausible-looking number
-  invented here would silently change a surgical calculation.
+For both sets: include an eye only if you can read its values confidently.
+Omit any eye or any section you cannot read — never guess or interpolate a
+digit. If the photo contains only one of the two document types, return an
+empty array for the other.
 
-For all three sets: include an eye only if you can read its values
-confidently. Omit any eye or any section you cannot read — never guess or
-interpolate a digit. If the photo contains only one of the document types,
-return an empty array for the others.
-
-Report only these numbers. Do not report the patient's name, ID, record
-number, CPF, date of birth, address, or any other identifying information,
-even if it is visible in the photograph.`;
+PATIENT NAME:
+- If a patient name is printed on the page and you can read it clearly,
+  report it as patientName, exactly as printed. It heads the clinic's own
+  record for this exam.
+- If no name is printed, or it is not clearly legible, return null. Never
+  guess at a name or complete a partially readable one.
+- Report the name only. Do not report the patient's ID or record number,
+  CPF, date of birth, address, phone number, or any other identifying
+  detail, even if it is visible in the photograph.`;
 
 const SCHEMA = {
   type: "object",
@@ -134,23 +123,12 @@ const SCHEMA = {
         additionalProperties: false,
       },
     },
-    optional: {
-      type: "array",
-      description:
-        "One entry per eye for the calculator's optional fields; omit an eye whose optional values are not printed.",
-      items: {
-        type: "object",
-        properties: {
-          side: { type: "string", enum: ["OD", "OS"] },
-          lensThickness: { type: ["number", "null"], description: "Lens thickness, mm" },
-          wtw: { type: ["number", "null"], description: "White-to-white corneal diameter, mm" },
-        },
-        required: ["side", "lensThickness", "wtw"],
-        additionalProperties: false,
-      },
+    patientName: {
+      type: ["string", "null"],
+      description: "The patient's name as printed on the page, or null if absent or unclear.",
     },
   },
-  required: ["keratometry", "biometry", "optional"],
+  required: ["keratometry", "biometry", "patientName"],
   additionalProperties: false,
 } as const;
 
@@ -162,15 +140,27 @@ function asArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
 }
 
+/**
+ * Accepts a plain, human-length name and nothing else: control characters
+ * are stripped, whitespace collapsed, and anything implausibly long is
+ * dropped rather than pasted into the record.
+ */
+function cleanPatientName(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const cleaned = raw
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned === "" || cleaned.length > 120 ? undefined : cleaned;
+}
+
 /** Keeps the first reading per eye and drops anything physiologically impossible. */
 function validate(raw: unknown): ScanResponse {
   const source = (raw ?? {}) as Record<string, unknown>;
   const keratometry: KeratometryScan[] = [];
   const biometry: BiometryScan[] = [];
-  const optional: OptionalScan[] = [];
   const seenK = new Set<string>();
   const seenB = new Set<string>();
-  const seenO = new Set<string>();
   let dropped = 0;
 
   for (const entry of asArray(source.keratometry)) {
@@ -203,30 +193,10 @@ function validate(raw: unknown): ScanResponse {
     seenB.add(side);
   }
 
-  for (const entry of asArray(source.optional)) {
-    const side = entry.side === "OD" || entry.side === "OS" ? entry.side : undefined;
-    if (!side || seenO.has(side)) {
-      dropped++;
-      continue;
-    }
-    // Each value stands alone here: an implausible lens thickness must not
-    // take a good WTW down with it, and a missing one is simply absent.
-    const reading: OptionalScan = { side };
-    for (const key of ["lensThickness", "wtw"] as const) {
-      const value = entry[key];
-      if (value === undefined || value === null) continue;
-      if (inRange(value, RANGES[key])) reading[key] = value;
-      else dropped++;
-    }
-    if (reading.lensThickness === undefined && reading.wtw === undefined) continue;
-    optional.push(reading);
-    seenO.add(side);
-  }
-
   return {
     keratometry,
     biometry,
-    optional,
+    patientName: cleanPatientName(source.patientName),
     warning:
       dropped > 0
         ? `${dropped} reading(s) were discarded for falling outside the physiologic range — enter those values by hand.`

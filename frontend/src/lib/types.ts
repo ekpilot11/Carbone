@@ -39,13 +39,6 @@ export interface BiometryReading {
   vitreousDepth?: number;
 }
 
-/** The calculator's "Optional:" block — either value can be present alone. */
-export interface OptionalReading {
-  side: EyeSide;
-  lensThickness?: number;
-  wtw?: number;
-}
-
 /** The only field a clinician must still supply by hand; not present on any scanned printout. */
 export interface ManualEyeInput {
   /** Desired postoperative spherical equivalent, in diopters. */

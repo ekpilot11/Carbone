@@ -43,18 +43,12 @@ export interface ScannedBiometry {
   acd: number;
 }
 
-/** The calculator's "Optional:" fields, present only when the printout shows them. */
-export interface ScannedOptional {
-  side: EyeSide;
-  lensThickness?: number;
-  wtw?: number;
-}
-
 /** One photo yields whichever of the two printouts it happens to contain. */
 export interface ScanResponse {
   keratometry: ScannedKeratometry[];
   biometry: ScannedBiometry[];
-  optional?: ScannedOptional[];
+  /** Read from the photo for the PDF record only; absent when it wasn't legible. */
+  patientName?: string;
   warning?: string;
 }
 

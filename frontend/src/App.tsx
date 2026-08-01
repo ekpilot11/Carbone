@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 import { CameraCapture } from "./components/CameraCapture";
 import {
@@ -13,7 +13,6 @@ import { prepareImage } from "./lib/imagePrep";
 import {
   applyBiometry,
   applyKeratometry,
-  applyOptional,
   emptyRow,
   formatRowForClipboard,
   isRowEmpty,
@@ -22,13 +21,26 @@ import {
   type EyeRowState,
 } from "./lib/eyeRow";
 import { A_CONSTANT, IOL_MODEL, LENS_FACTOR } from "./lib/constants";
+import {
+  initialLanguage,
+  LANGUAGES,
+  LANGUAGE_LABELS,
+  rememberLanguage,
+  STRINGS,
+  type Lang,
+  type Strings,
+} from "./lib/i18n";
 import { BUNDLED_LENS_OPTIONS, isPersonalConstant, PERSONAL_CONSTANT } from "./lib/lenses";
-import { buildMedicalRecordPdf, medicalRecordFileName, type MedicalRecordInput } from "./lib/medicalRecord";
+import {
+  buildMedicalRecordPdf,
+  medicalRecordFileName,
+  type MedicalRecordInput,
+} from "./lib/medicalRecord";
 import { downloadPdf } from "./lib/pdf";
 import { parseBiometryText } from "./lib/parseBiometry";
 import { parseTopographyText } from "./lib/parseTopography";
 import { recognizeVariants } from "./lib/ocr";
-import type { BiometryReading, EyeSide, KeratometryReading, OptionalReading } from "./lib/types";
+import type { BiometryReading, EyeSide, KeratometryReading } from "./lib/types";
 
 const CALCULATOR_URL = "https://calc.apacrs.org/barrett_universal2105/";
 
@@ -47,6 +59,8 @@ function readCachedLensOptions(): string[] | null {
 }
 
 function App() {
+  const [lang, setLang] = useState<Lang>(initialLanguage);
+  const t = STRINGS[lang];
   const [rows, setRows] = useState<Record<EyeSide, EyeRowState>>({
     OD: emptyRow("OD"),
     OS: emptyRow("OS"),
@@ -68,9 +82,23 @@ function App() {
   const [copied, setCopied] = useState(false);
   const [lens, setLens] = useState<string>(PERSONAL_CONSTANT);
   const [lensOptions, setLensOptions] = useState<readonly string[]>(BUNDLED_LENS_OPTIONS);
-  // Typed here, never read from the photo — the scan refuses to return
-  // identifiers. Used only to head the PDF, and never sent anywhere.
+  // Filled from the photo when the name is legible, and editable either
+  // way. It heads the PDF record and is never sent to the calculator.
   const [patientName, setPatientName] = useState("");
+
+  const eyeTitles = useMemo<Record<EyeSide, string>>(
+    () => ({ OD: t.eyeOd, OS: t.eyeOs }),
+    [t],
+  );
+
+  function changeLanguage(next: Lang) {
+    setLang(next);
+    rememberLanguage(next);
+    // Messages already on screen were composed in the old language and
+    // can't be re-rendered; clearing beats leaving a stale mixed page.
+    setScanMessage(null);
+    setCalcError(null);
+  }
 
   // The site's own dropdown is the authority on lens names; the bundled list
   // is a transcription that stands in when the site can't be reached.
@@ -111,14 +139,13 @@ function App() {
   async function readPhoto(blob: Blob): Promise<{
     keratometry: Map<EyeSide, KeratometryReading>;
     biometry: Map<EyeSide, BiometryReading>;
-    optional: Map<EyeSide, OptionalReading>;
+    patientName?: string;
     bestText: string;
     warning?: string;
     usedFallback: boolean;
   }> {
     const keratometry = new Map<EyeSide, KeratometryReading>();
     const biometry = new Map<EyeSide, BiometryReading>();
-    const optional = new Map<EyeSide, OptionalReading>();
 
     try {
       const { base64, mediaType } = await prepareImage(blob);
@@ -139,13 +166,10 @@ function App() {
           acd: b.acd,
         });
       }
-      for (const o of result.optional ?? []) {
-        optional.set(o.side, { side: o.side, lensThickness: o.lensThickness, wtw: o.wtw });
-      }
       return {
         keratometry,
         biometry,
-        optional,
+        patientName: result.patientName,
         bestText: "",
         warning: result.warning,
         usedFallback: false,
@@ -156,7 +180,8 @@ function App() {
 
     // On-device fallback: each image treatment reads different parts of a
     // faded printout, so keep the first good reading per eye and stop once
-    // all four eye/format combinations are covered.
+    // all four eye/format combinations are covered. It reads clinical
+    // numbers only — the patient's name stays for the clinician to type.
     let bestText = "";
     for await (const text of recognizeVariants(blob)) {
       if (text.trim().length > bestText.trim().length) bestText = text;
@@ -168,14 +193,7 @@ function App() {
       }
       if (keratometry.size === 2 && biometry.size === 2) break;
     }
-    // The on-device A-scan parser reads the LENS line as part of the
-    // biometry block; WTW isn't on that printout, so it stays manual here.
-    for (const reading of biometry.values()) {
-      if (reading.lensThickness !== undefined) {
-        optional.set(reading.side, { side: reading.side, lensThickness: reading.lensThickness });
-      }
-    }
-    return { keratometry, biometry, optional, bestText, usedFallback: true };
+    return { keratometry, biometry, bestText, usedFallback: true };
   }
 
   async function handleScan(blob: Blob) {
@@ -184,20 +202,22 @@ function App() {
     setPreview(URL.createObjectURL(blob));
     setScanBusy(true);
     try {
-      const { keratometry, biometry, optional, bestText, warning, usedFallback } =
-        await readPhoto(blob);
+      const {
+        keratometry,
+        biometry,
+        patientName: scannedName,
+        bestText,
+        warning,
+        usedFallback,
+      } = await readPhoto(blob);
 
       // Falling back is a much weaker reader, so say so rather than letting
       // a degraded scan look like a normal one.
-      const fallbackNote = usedFallback
-        ? "Read on this device — the server has no vision model configured (ANTHROPIC_API_KEY), so accuracy is much lower. Check every value."
-        : null;
+      const fallbackNote = usedFallback ? t.scanFallbackNote : null;
 
       if (keratometry.size === 0 && biometry.size === 0) {
-        const advice =
-          "Couldn't read any values from that photo. Make sure the printouts are flat, well-lit, and large enough in the frame that the digits are legible — then retake, or type the values in below.";
-        setScanMessage(fallbackNote ? `${fallbackNote} ${advice}` : advice);
-        setFailedOcrText(bestText.trim() || "(nothing readable)");
+        setScanMessage(fallbackNote ? `${fallbackNote} ${t.scanNothing}` : t.scanNothing);
+        setFailedOcrText(bestText.trim() || t.scanNothingReadable);
         return;
       }
 
@@ -209,11 +229,11 @@ function App() {
         for (const reading of biometry.values()) {
           next[reading.side] = applyBiometry(next[reading.side], reading);
         }
-        for (const reading of optional.values()) {
-          next[reading.side] = applyOptional(next[reading.side], reading);
-        }
         return next;
       });
+      // Never overwrite a name already typed: the clinician's spelling wins
+      // over the model's reading of a faint printout.
+      if (scannedName) setPatientName((current) => (current.trim() === "" ? scannedName : current));
 
       const notes: string[] = [];
       if (fallbackNote) notes.push(fallbackNote);
@@ -224,16 +244,14 @@ function App() {
       const missingK = (["OD", "OS"] as const).filter((side) => !keratometry.has(side));
       const missingB = (["OD", "OS"] as const).filter((side) => !biometry.has(side));
       if (missingK.length === 2) {
-        notes.push("No K values were found — enter K1/K2 for both eyes by hand.");
+        notes.push(t.scanNoK);
       } else if (missingK.length === 1) {
-        notes.push(`K values were only read for ${missingK[0] === "OD" ? "OS" : "OD"} — enter ${missingK[0]}'s by hand.`);
+        notes.push(t.scanOneK(missingK[0] === "OD" ? "OS" : "OD", missingK[0]));
       }
       if (missingB.length === 2) {
-        notes.push("No axial length / ACD values were found — enter them by hand.");
+        notes.push(t.scanNoBiometry);
       } else if (missingB.length === 1) {
-        notes.push(
-          `Axial length / ACD were only read for ${missingB[0] === "OD" ? "OS" : "OD"} — enter ${missingB[0]}'s by hand.`,
-        );
+        notes.push(t.scanOneBiometry(missingB[0] === "OD" ? "OS" : "OD", missingB[0]));
       }
       // The printout always lists the right eye first, so print order is
       // reliable for a two-block scan and needs no warning. A lone block
@@ -241,18 +259,13 @@ function App() {
       // eye, and a swap here would reach a surgical calculation.
       const loneUnlabeledEye =
         biometry.size === 1 && [...biometry.values()][0].sideSource === "order";
-      if (loneUnlabeledEye) {
-        notes.push(
-          "Only one eye was on this scan and its OD/OS label wasn't legible, so it was filed as OD. Check the printout's \"Sex:… OD/OS …\" line and move the values if it's the left eye.",
-        );
-      }
+      if (loneUnlabeledEye) notes.push(t.scanUnlabeledEye);
+      if (!scannedName && !usedFallback) notes.push(t.scanNoName);
       setScanMessage(notes.length > 0 ? notes.join(" ") : null);
       if (notes.length > 0 && bestText.trim()) setFailedOcrText(bestText.trim());
     } catch (err) {
       setScanMessage(
-        err instanceof Error
-          ? `${err.message} You can retake the photo or type the values in below.`
-          : "Scanning failed on that photo. You can retake it or type the values in below.",
+        err instanceof Error ? t.scanFailedSuffix(err.message) : t.scanFailedGeneric,
       );
     } finally {
       setScanBusy(false);
@@ -268,6 +281,13 @@ function App() {
   }
 
   const plan = planCalculation(rows.OD, rows.OS);
+  const planProblem = plan.ok
+    ? null
+    : plan.reason === "partialOd"
+      ? t.planPartialOd
+      : plan.reason === "partialOs"
+        ? t.planPartialOs
+        : t.planEmpty;
 
   async function handleCalculate() {
     if (!plan.ok) return;
@@ -283,7 +303,7 @@ function App() {
       setResult(response);
       setSubmitted({ rows, sides: plan.sides, lens });
     } catch (err) {
-      setCalcError(err instanceof Error ? err.message : "Calculation failed.");
+      setCalcError(err instanceof Error ? err.message : t.calcFailed);
     } finally {
       setCalculating(false);
     }
@@ -301,6 +321,7 @@ function App() {
     const record: MedicalRecordInput = {
       patientName,
       recordedAt: new Date(),
+      lang,
       lens: {
         name: result.lens?.name ?? submitted.lens,
         lensFactor:
@@ -321,7 +342,7 @@ function App() {
     const sections: string[] = [];
     if (!isRowEmpty(rows.OD)) sections.push("OD (right eye)", formatRowForClipboard(rows.OD, lens), "");
     if (!isRowEmpty(rows.OS)) sections.push("OS (left eye)", formatRowForClipboard(rows.OS, lens));
-    const text = sections.join("\n").trim() || "No values entered yet.";
+    const text = sections.join("\n").trim() || t.noValuesToCopy;
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -330,47 +351,48 @@ function App() {
   return (
     <div className="app">
       <header>
-        <h1>IOL Power Calculator Assistant</h1>
+        <div className="header-row">
+          <h1>{t.title}</h1>
+          <div className="lang-switch" role="group" aria-label="Language">
+            {LANGUAGES.map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={option === lang ? "active" : undefined}
+                aria-pressed={option === lang}
+                onClick={() => changeLanguage(option)}
+              >
+                {LANGUAGE_LABELS[option]}
+              </button>
+            ))}
+          </div>
+        </div>
         <p className="disclaimer">
-          This tool only helps enter scanned biometry/topography values into the Barrett Universal II
-          calculator faster. It does not replace clinical judgment. <strong>Always verify every value —
-          especially anything read from a photo — and confirm the final IOL power on the official
-          calculator before using it in surgical planning.</strong> Photos are read by a vision model,
-          which means <strong>the image is sent off this machine</strong> — frame the shot on the
-          measurement block, not the patient's details. Nothing is stored or logged.
+          {t.disclaimerIntro}
+          <strong>{t.disclaimerVerify}</strong>
+          {t.disclaimerPhotoBefore}
+          <strong>{t.disclaimerPhotoStrong}</strong>
+          {t.disclaimerPhotoAfter}
         </p>
       </header>
 
       <section className="scans">
-        <CameraCapture
-          label="1. Photograph the exam printouts"
-          hint="One photo of the keratometry strip and the A-scan printout together — or either one on its own. Keep the paper flat and well-lit, and leave the patient's name and ID out of the frame."
-          onCapture={handleScan}
-          previewUrl={preview}
-          busy={scanBusy}
-        />
+        <CameraCapture t={t} onCapture={handleScan} previewUrl={preview} busy={scanBusy} />
       </section>
 
       {scanMessage && <p className="scan-message">{scanMessage}</p>}
       {failedOcrText && (
         <details className="raw-details">
-          <summary>Show what the scanner could read</summary>
+          <summary>{t.scanShowRaw}</summary>
           <pre>{failedOcrText}</pre>
         </details>
       )}
 
       <section className="review">
-        <h2>2. Review &amp; complete</h2>
-        <p className="hint">
-          Fields marked <span className="ocr-badge">OCR</span> were read from your photos — double-check
-          them. The printout doesn't label which K is which, so K1 is always the lower of the two values
-          (swapped automatically if entered the other way round). Refraction target defaults to 0
-          (emmetropia) — change it only when the plan differs. The <em>Optional:</em> fields are filled
-          only when the photo shows them; leaving them blank is fine. To calculate a single eye, fill in
-          only that eye — use "Clear" to empty the other one.
-        </p>
+        <h2>{t.reviewTitle}</h2>
+        <p className="hint">{t.reviewHint}</p>
         <label className="field lens-field">
-          <span>Lens</span>
+          <span>{t.lensLabel}</span>
           <select value={lens} onChange={(e) => setLens(e.target.value)}>
             {lensOptions.map((option) => (
               <option key={option} value={option}>
@@ -380,75 +402,68 @@ function App() {
           </select>
         </label>
         <p className="fixed-iol-note">
-          {isPersonalConstant(lens) ? (
-            <>
-              IOL: <strong>{IOL_MODEL}</strong> · A-Constant <strong>{A_CONSTANT}</strong> · Lens
-              Factor <strong>{LENS_FACTOR}</strong> — this practice's own constants, sent with every
-              calculation.
-            </>
-          ) : (
-            <>
-              <strong>{lens}</strong> is selected in the calculator itself, so it uses that lens's own
-              A-Constant and Lens Factor — this practice's constants ({A_CONSTANT} / {LENS_FACTOR}) are
-              not applied. The constants actually used are reported with the results.
-            </>
-          )}
+          {isPersonalConstant(lens)
+            ? t.lensPersonalNote(IOL_MODEL, A_CONSTANT, LENS_FACTOR)
+            : t.lensNamedNote(lens, A_CONSTANT, LENS_FACTOR)}
         </p>
         <div className="eye-forms">
-          <EyeForm row={rows.OD} title="OD (right eye)" onChange={updateField} onClear={clearEye} />
-          <EyeForm row={rows.OS} title="OS (left eye)" onChange={updateField} onClear={clearEye} />
+          <EyeForm
+            t={t}
+            row={rows.OD}
+            title={eyeTitles.OD}
+            onChange={updateField}
+            onClear={clearEye}
+          />
+          <EyeForm
+            t={t}
+            row={rows.OS}
+            title={eyeTitles.OS}
+            onChange={updateField}
+            onClear={clearEye}
+          />
         </div>
       </section>
 
       <section className="actions">
         <button type="button" onClick={handleCalculate} disabled={!plan.ok || calculating}>
           {calculating
-            ? "Calculating…"
+            ? t.calculating
             : plan.ok && plan.sides.length === 1
-              ? `Calculate ${plan.sides[0]} with Barrett Universal II`
-              : "Calculate with Barrett Universal II"}
+              ? t.calculateOne(plan.sides[0])
+              : t.calculate}
         </button>
         <button type="button" onClick={handleCopy} className="secondary">
-          {copied ? "Copied!" : "Copy values"}
+          {copied ? t.copied : t.copyValues}
         </button>
         <a href={CALCULATOR_URL} target="_blank" rel="noopener noreferrer" className="secondary link-btn">
-          Open calculator manually
+          {t.openCalculator}
         </a>
-        {!plan.ok && <p className="hint">{plan.reason}</p>}
-        {calculating && (
-          <p className="hint">
-            Usually nothing else is needed. If the calculator site asks for a security check, a
-            browser window opens on the computer running the backend — click "Verify you are human"
-            there and the calculation continues automatically.
-          </p>
-        )}
+        {planProblem && <p className="hint">{planProblem}</p>}
+        {calculating && <p className="hint">{t.cloudflareHint}</p>}
       </section>
 
       {calcError && (
         <section className="error-box">
           <p>{calcError}</p>
-          <p className="hint">
-            The automated calculator may be unreachable, or its form may have changed. Use "Copy values" and
-            "Open calculator manually" above to enter them yourself.
-          </p>
+          <p className="hint">{t.calcErrorHint}</p>
         </section>
       )}
 
       {result && (
         <section className="results">
-          <h2>Results</h2>
+          <h2>{t.resultsTitle}</h2>
           {result.warning && <p className="scan-message">{result.warning}</p>}
           {(result.recommended?.od || result.recommended?.os) && (
             <div className="recommended-row">
               {result.recommended?.od && (
                 <div className="recommended-card">
-                  <span className="recommended-label">OD — Recommended IOL</span>
+                  <span className="recommended-label">{t.recommendedFor("OD")}</span>
                   <span className="recommended-value">{result.recommended.od} D</span>
                 </div>
               )}
               {result.recommended?.os && (
                 <div className="recommended-card">
-                  <span className="recommended-label">OS — Recommended IOL</span>
+                  <span className="recommended-label">{t.recommendedFor("OS")}</span>
                   <span className="recommended-value">{result.recommended.os} D</span>
                 </div>
               )}
@@ -458,14 +473,14 @@ function App() {
             <>
               <div className="result-tables">
                 {result.tables.od.length > 0 && (
-                  <EyeResultTable title="OD (right eye)" rows={result.tables.od} />
+                  <EyeResultTable t={t} title={eyeTitles.OD} rows={result.tables.od} />
                 )}
                 {result.tables.os.length > 0 && (
-                  <EyeResultTable title="OS (left eye)" rows={result.tables.os} />
+                  <EyeResultTable t={t} title={eyeTitles.OS} rows={result.tables.os} />
                 )}
               </div>
               <details className="raw-details">
-                <summary>Raw calculator text</summary>
+                <summary>{t.rawText}</summary>
                 <pre>{result.resultsText}</pre>
               </details>
             </>
@@ -476,38 +491,32 @@ function App() {
           )}
           {result.lens && (
             <p className="hint">
-              Calculated with <strong>{result.lens.name}</strong>
-              {result.lens.lensFactor ? ` — Lens Factor ${result.lens.lensFactor}` : ""}
-              {result.lens.aConstant ? `, A Constant ${result.lens.aConstant}` : ""}, as read back off
-              the calculator page.
+              {t.lensUsed(
+                result.lens.name,
+                [
+                  result.lens.lensFactor ? ` — ${t.pdfLensFactor(result.lens.lensFactor)}` : "",
+                  result.lens.aConstant ? `, ${t.pdfAConstant(result.lens.aConstant)}` : "",
+                ].join(""),
+              )}
             </p>
           )}
-          <p className="hint">
-            Verify these figures against{" "}
-            <a href={CALCULATOR_URL} target="_blank" rel="noopener noreferrer">
-              calc.apacrs.org
-            </a>{" "}
-            before using them clinically.
-          </p>
+          <p className="hint">{t.verifyAgainst}</p>
 
           <div className="record-box">
-            <h3>Medical record (PDF)</h3>
-            <p className="hint">
-              Saves the measurements and results above as a one-page PDF, on this device only —
-              nothing is uploaded. The patient's name is typed here; it is never read from the photo.
-            </p>
+            <h3>{t.recordTitle}</h3>
+            <p className="hint">{t.recordHint}</p>
             <label className="field">
-              <span>Patient name (for the record)</span>
+              <span>{t.recordName}</span>
               <input
                 type="text"
                 value={patientName}
                 onChange={(e) => setPatientName(e.target.value)}
-                placeholder="Leave blank to omit"
+                placeholder={t.recordNamePlaceholder}
                 autoComplete="off"
               />
             </label>
             <button type="button" onClick={handleDownloadRecord}>
-              Download PDF record
+              {t.recordDownload}
             </button>
           </div>
         </section>
@@ -517,11 +526,12 @@ function App() {
 }
 
 interface EyeResultTableProps {
+  t: Strings;
   title: string;
   rows: IolTableRow[];
 }
 
-function EyeResultTable({ title, rows }: EyeResultTableProps) {
+function EyeResultTable({ t, title, rows }: EyeResultTableProps) {
   // Highlight the option that lands closest to plano (refraction 0) —
   // normally the middle row of the 7 the calculator returns.
   let bestIndex = -1;
@@ -540,9 +550,9 @@ function EyeResultTable({ title, rows }: EyeResultTableProps) {
       <table className="iol-table">
         <thead>
           <tr>
-            <th>IOL Power</th>
-            <th>Optic</th>
-            <th>Refraction</th>
+            <th>{t.colPower}</th>
+            <th>{t.colOptic}</th>
+            <th>{t.colRefraction}</th>
             <th aria-hidden="true"></th>
           </tr>
         </thead>
@@ -552,7 +562,7 @@ function EyeResultTable({ title, rows }: EyeResultTableProps) {
               <td>{row.power}</td>
               <td>{row.optic}</td>
               <td>{row.refraction}</td>
-              <td className="best-cell">{i === bestIndex ? "closest to 0" : ""}</td>
+              <td className="best-cell">{i === bestIndex ? t.closestToZero : ""}</td>
             </tr>
           ))}
         </tbody>
@@ -562,17 +572,18 @@ function EyeResultTable({ title, rows }: EyeResultTableProps) {
 }
 
 interface EyeFormProps {
+  t: Strings;
   row: EyeRowState;
   title: string;
   onChange: (side: EyeSide, field: keyof EyeRowState, value: string) => void;
   onClear: (side: EyeSide) => void;
 }
 
-function EyeForm({ row, title, onChange, onClear }: EyeFormProps) {
-  const field = (key: keyof EyeRowState, label: string, unit: string, ocr: boolean) => (
+function EyeForm({ t, row, title, onChange, onClear }: EyeFormProps) {
+  const field = (key: keyof EyeRowState, label: string, unit: string) => (
     <label className="field">
       <span>
-        {label} {unit && `(${unit})`} {ocr && <span className="ocr-badge">OCR</span>}
+        {label} {unit && `(${unit})`}
       </span>
       <input
         type="number"
@@ -592,21 +603,21 @@ function EyeForm({ row, title, onChange, onClear }: EyeFormProps) {
         onClick={() => onClear(row.side)}
         disabled={isRowEmpty(row)}
       >
-        Clear {row.side}
+        {t.clearEye(row.side)}
       </button>
       <div className="field-group">
-        {field("axialLength", "Axial Length", "mm", true)}
-        {field("k1", "Measured K1", "D", true)}
-        {field("k2", "Measured K2", "D", true)}
-        {field("acd", "Optical ACD", "mm", true)}
-        {field("targetRefraction", "Refraction (target)", "D", false)}
+        {field("axialLength", t.fieldAxialLength, "mm")}
+        {field("k1", t.fieldK1, "D")}
+        {field("k2", t.fieldK2, "D")}
+        {field("acd", t.fieldAcd, "mm")}
+        {field("targetRefraction", t.fieldRefraction, "D")}
       </div>
       {/* Laid out as the official calculator does: the two values it treats
           as optional sit in their own block below the measurements. */}
       <div className="field-group optional-group">
-        <p className="group-title">Optional:</p>
-        {field("lensThickness", "Lens Thickness", "mm", true)}
-        {field("wtw", "WTW", "mm", true)}
+        <p className="group-title">{t.optionalHeading}</p>
+        {field("lensThickness", t.fieldLensThickness, "mm")}
+        {field("wtw", t.fieldWtw, "mm")}
       </div>
     </fieldset>
   );

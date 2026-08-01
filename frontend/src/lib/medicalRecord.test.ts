@@ -22,6 +22,7 @@ const OD = {
 const RECORD: MedicalRecordInput = {
   patientName: "Ana Conceição",
   recordedAt: new Date("2026-08-01T13:45:00Z"),
+  lang: "en",
   lens: { name: "Personal Constant", lensFactor: "1.57", aConstant: "118.4" },
   eyes: [
     {
@@ -61,12 +62,46 @@ describe("medical record layout", () => {
     const text = textOf(RECORD);
     expect(text).toContain("Recommended IOL: 21.50 D");
     expect(text).toContain("Recommended IOL: not reported by the calculator");
-    expect(text).toContain("No IOL power options were returned for this eye.");
   });
 
-  it("marks the option closest to plano, matching the on-screen table", () => {
+  it("records only the recommendation, not the other IOL powers", () => {
+    const text = textOf(RECORD);
+    expect(text).not.toContain("23.00");
+    expect(text).not.toContain("-0.75");
+  });
+
+  it("attaches the predicted refraction of the row closest to plano", () => {
     expect(closestToPlano(RECORD.eyes[0].rows)).toBe(2);
-    expect(textOf(RECORD)).toContain("closest to 0");
+    const table = RECORD.eyes[0].rows;
+    const text = textOf({
+      ...RECORD,
+      eyes: [{ side: "OD", measurements: OD, recommended: table[2].power, rows: table }],
+    });
+    expect(text).toContain("Recommended IOL: 21.00 D  (predicted refraction 0.10 D)");
+  });
+
+  it("omits the predicted refraction when it belongs to a different power", () => {
+    // The calculator's own recommendation wins; pairing it with another
+    // row's refraction would state a prediction that was never made.
+    const text = textOf(RECORD);
+    expect(text).toContain("Recommended IOL: 21.50 D");
+    expect(text).not.toContain("predicted refraction");
+  });
+
+  it("falls back to the closest-to-plano row when no recommendation was reported", () => {
+    const text = textOf({
+      ...RECORD,
+      eyes: [{ side: "OD", measurements: OD, rows: RECORD.eyes[0].rows }],
+    });
+    expect(text).toContain("Recommended IOL: 21.00 D  (predicted refraction 0.10 D)");
+  });
+
+  it("writes the record in Portuguese when the app is in Portuguese", () => {
+    const text = textOf({ ...RECORD, lang: "pt" });
+    expect(text).toContain("Prontuário de Cálculo de LIO");
+    expect(text).toContain("Paciente");
+    expect(text).toContain("LIO recomendada: 21.50 D");
+    expect(text).toContain("Comprimento axial");
   });
 
   it("marks nothing when no refraction parses", () => {

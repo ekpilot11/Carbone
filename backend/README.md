@@ -12,32 +12,35 @@ Express server exposing two routes:
 ## Photo scanning (`POST /api/scan`)
 
 Body: `{ imageBase64, mediaType }` (JPEG/PNG/WebP). Returns
-`{ keratometry: [{side, k1, k2}], biometry: [{side, axialLength, acd}], optional: [{side, lensThickness?, wtw?}], warning? }`
+`{ keratometry: [{side, k1, k2}], biometry: [{side, axialLength, acd}], patientName?, warning? }`
 — each array holds one entry per eye that could be read, and is empty when
 that printout isn't in the photo. A single prompt covers both formats, so
 one wide shot of the two strips side by side works, and so does a close-up
 of either one alone.
 
-`optional` mirrors the calculator's own "Optional:" block (lens thickness,
-white-to-white). It is a separate array because either value can appear
-alone, on either printout, and an eye whose axial length is unreadable can
-still contribute a legible WTW. Each optional value is range-checked on its
-own, so one implausible reading doesn't discard the other.
+The calculator's optional values (lens thickness, WTW) are deliberately
+**not** read: they are entered by hand, so a scan can never overwrite or
+blank what the clinician typed.
+
+`patientName` is returned when a name is printed legibly, to head the
+clinic's PDF record. It is never sent on to the calculator (Patient Name
+there stays a neutral "-"), and the prompt excludes every other identifier
+— ID/record number, CPF, date of birth, address, phone.
 
 Set `ANTHROPIC_API_KEY` to enable it; without it the route returns **503**
 and the frontend falls back to in-browser OCR (saying so in the UI).
 Override the model with `SCAN_MODEL` (default `claude-opus-5`).
 
 **The photograph is sent to the Anthropic API** — see the privacy section of
-the root README before using this with real patients, and prefer framing the
-shot on the measurement block rather than the whole page. The image is held
-in memory for the request and never written to disk or logged.
+the root README before using this with real patients. Whatever is in frame is
+transmitted, so keep out anything the record doesn't need (the name is read
+for the record; ID numbers, CPF, date of birth and address are not). The
+image is held in memory for the request and never written to disk or logged.
 
-Two safeguards sit on the response, not the request: the prompt forbids
-returning patient identifiers, and every value is checked against the
+Two safeguards sit on the response, not the request: the prompt limits what
+comes back to the clinical numbers plus the patient's name, and every value is checked against the
 physiologic ranges in `src/ranges.ts` (K 30–60 D, AL 12–38 mm, ACD
-0.5–6 mm, lens thickness 2–8 mm, WTW 8–14 mm). Out-of-range values are
-dropped with a warning rather than
+0.5–6 mm). Out-of-range values are dropped with a warning rather than
 passed on — a misread digit must never reach a surgical calculation. The
 K1-is-lower convention is re-applied server-side rather than trusted from
 the model.
@@ -159,7 +162,8 @@ protection.
   constants). Filling both is suspected of silently blocking Calculate.
   With a named lens neither is filled — see "Lens selection" above.
 - Lens Thickness and WTW are per-eye fields in the form's "Optional:"
-  block and are filled only when the request carries them.
+  block and are filled only when the request carries them (they are typed
+  by hand in the frontend, never scanned).
 - After filling, every value is read back and compared; if anything landed
   in the wrong box the run aborts *before* clicking Calculate — a wrong box
   means a wrong surgical calculation.

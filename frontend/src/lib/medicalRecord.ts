@@ -1,16 +1,16 @@
 import type { IolTableRow } from "./api";
 import type { EyeRowState } from "./eyeRow";
+import { STRINGS, type Lang, type Strings } from "./i18n";
 import { A4_HEIGHT, A4_WIDTH, buildPdf, type PdfDocument, type PdfRule, type PdfText } from "./pdf";
 import type { EyeSide } from "./types";
 
 /**
- * Lays out the printable record: what was measured for each eye and what
- * the Barrett Universal II calculator returned for it.
+ * Lays out the printable record: what was measured for each eye, and the
+ * one IOL power the calculator recommends for it — the full table of
+ * alternatives is on screen, but the record carries the decision.
  *
- * The patient's name is typed by the clinician here and never comes from
- * the photograph — the scan deliberately refuses to read identifiers. The
- * whole document is assembled and saved in the browser, so nothing in it
- * is transmitted anywhere.
+ * The document is assembled and saved in the browser, so nothing in it —
+ * the patient's name included — is transmitted anywhere.
  */
 
 export interface MedicalRecordEye {
@@ -26,16 +26,17 @@ export interface MedicalRecordInput {
   recordedAt: Date;
   lens: { name: string; lensFactor?: string; aConstant?: string };
   eyes: MedicalRecordEye[];
+  /** The record follows the language the app is being used in. */
+  lang: Lang;
 }
 
 const MARGIN = 56;
 const LINE = 15;
 const MISSING = "-";
 
-const EYE_TITLES: Record<EyeSide, string> = {
-  OD: "OD - Right eye",
-  OS: "OS - Left eye",
-};
+function eyeTitle(t: Strings, side: EyeSide): string {
+  return side === "OD" ? t.pdfEyeOd : t.pdfEyeOs;
+}
 
 function value(raw: string, unit: string): string {
   const trimmed = raw.trim();
@@ -66,6 +67,7 @@ export function closestToPlano(rows: IolTableRow[]): number {
 }
 
 export function buildMedicalRecordDocument(input: MedicalRecordInput): PdfDocument {
+  const t = STRINGS[input.lang];
   const texts: PdfText[] = [];
   const rules: PdfRule[] = [];
   const right = A4_WIDTH - MARGIN;
@@ -75,9 +77,9 @@ export function buildMedicalRecordDocument(input: MedicalRecordInput): PdfDocume
     texts.push({ text, x, y, size: options.size, bold: options.bold });
   };
 
-  write("IOL Calculation Record", MARGIN, { size: 18, bold: true });
+  write(t.pdfTitle, MARGIN, { size: 18, bold: true });
   y += 18;
-  write("Barrett Universal II formula - calc.apacrs.org", MARGIN, { size: 9 });
+  write(t.pdfSubtitle, MARGIN, { size: 9 });
   y += 10;
   rules.push({ x1: MARGIN, x2: right, y });
 
@@ -87,17 +89,20 @@ export function buildMedicalRecordDocument(input: MedicalRecordInput): PdfDocume
     write(text, MARGIN + 90, { size: 10 });
     y += LINE;
   };
-  labelled("Patient", input.patientName.trim() || MISSING);
-  labelled("Date", formatDate(input.recordedAt));
+  labelled(t.pdfPatient, input.patientName.trim() || MISSING);
+  labelled(t.pdfDate, formatDate(input.recordedAt));
   const constants = [
-    input.lens.lensFactor ? `Lens Factor ${input.lens.lensFactor}` : null,
-    input.lens.aConstant ? `A Constant ${input.lens.aConstant}` : null,
+    input.lens.lensFactor ? t.pdfLensFactor(input.lens.lensFactor) : null,
+    input.lens.aConstant ? t.pdfAConstant(input.lens.aConstant) : null,
   ].filter((part): part is string => part !== null);
-  labelled("Lens", constants.length > 0 ? `${input.lens.name} (${constants.join(", ")})` : input.lens.name);
+  labelled(
+    t.pdfLens,
+    constants.length > 0 ? `${input.lens.name} (${constants.join(", ")})` : input.lens.name,
+  );
 
   for (const eye of input.eyes) {
     y += 16;
-    write(EYE_TITLES[eye.side], MARGIN, { size: 13, bold: true });
+    write(eyeTitle(t, eye.side), MARGIN, { size: 13, bold: true });
     y += 6;
     rules.push({ x1: MARGIN, x2: right, y, gray: 0.6 });
     y += 20;
@@ -105,13 +110,13 @@ export function buildMedicalRecordDocument(input: MedicalRecordInput): PdfDocume
     const m = eye.measurements;
     // Two columns of measurements, in the order the calculator asks for them.
     const pairs: Array<[string, string]> = [
-      ["Axial Length", value(m.axialLength, "mm")],
-      ["Measured K1", value(m.k1, "D")],
-      ["Optical ACD", value(m.acd, "mm")],
-      ["Measured K2", value(m.k2, "D")],
-      ["Lens Thickness", value(m.lensThickness, "mm")],
-      ["WTW", value(m.wtw, "mm")],
-      ["Target Refraction", value(m.targetRefraction, "D")],
+      [t.pdfAxialLength, value(m.axialLength, "mm")],
+      [t.pdfK1, value(m.k1, "D")],
+      [t.pdfAcd, value(m.acd, "mm")],
+      [t.pdfK2, value(m.k2, "D")],
+      [t.pdfLensThickness, value(m.lensThickness, "mm")],
+      [t.pdfWtw, value(m.wtw, "mm")],
+      [t.pdfTargetRefraction, value(m.targetRefraction, "D")],
     ];
     for (let i = 0; i < pairs.length; i += 2) {
       const columns = [pairs[i], pairs[i + 1]].filter((pair): pair is [string, string] => Boolean(pair));
@@ -123,55 +128,36 @@ export function buildMedicalRecordDocument(input: MedicalRecordInput): PdfDocume
       y += LINE;
     }
 
-    y += 10;
+    // Only the recommendation is recorded — the other six powers are
+    // alternatives the clinician has already looked at on screen.
+    y += 12;
+    const best = closestToPlano(eye.rows);
+    const bestRow = best >= 0 ? eye.rows[best] : undefined;
+    // The calculator's own summary wins when it reported one; the predicted
+    // refraction is only attached when it demonstrably belongs to that power.
+    const power = eye.recommended ?? bestRow?.power;
+    const refraction =
+      bestRow && (eye.recommended === undefined || eye.recommended === bestRow.power)
+        ? bestRow.refraction
+        : undefined;
     write(
-      eye.recommended
-        ? `Recommended IOL: ${eye.recommended} D`
-        : "Recommended IOL: not reported by the calculator",
+      power === undefined
+        ? t.pdfNoRecommendation
+        : refraction === undefined
+          ? t.pdfRecommended(power)
+          : `${t.pdfRecommended(power)}  (${t.pdfPredicted(refraction)})`,
       MARGIN,
-      { size: 11, bold: true },
+      { size: 12, bold: true },
     );
-    y += 20;
-
-    if (eye.rows.length > 0) {
-      const columns = [MARGIN, MARGIN + 100, MARGIN + 200, MARGIN + 300];
-      ["IOL Power", "Optic", "Refraction", ""].forEach((heading, index) => {
-        texts.push({ text: heading, x: columns[index], y, size: 9, bold: true });
-      });
-      y += 5;
-      rules.push({ x1: MARGIN, x2: right, y, gray: 0.6 });
-      y += 13;
-
-      const best = closestToPlano(eye.rows);
-      eye.rows.forEach((row, index) => {
-        const highlight = index === best;
-        [row.power, row.optic, row.refraction, highlight ? "closest to 0" : ""].forEach((cell, column) => {
-          texts.push({ text: cell, x: columns[column], y, size: 10, bold: highlight });
-        });
-        y += LINE;
-      });
-    } else {
-      write("No IOL power options were returned for this eye.", MARGIN, { size: 10 });
-      y += LINE;
-    }
+    y += LINE;
   }
 
   const footerY = A4_HEIGHT - 56;
   rules.push({ x1: MARGIN, x2: right, y: footerY - 24, gray: 0.6 });
-  texts.push({
-    text: "Values read from the exam printouts and confirmed by the clinician before calculation.",
-    x: MARGIN,
-    y: footerY - 10,
-    size: 8,
-  });
-  texts.push({
-    text: "Computed with the Barrett Universal II calculator. Verify before surgical planning.",
-    x: MARGIN,
-    y: footerY,
-    size: 8,
-  });
+  texts.push({ text: t.pdfFooterValues, x: MARGIN, y: footerY - 10, size: 8 });
+  texts.push({ text: t.pdfFooterFormula, x: MARGIN, y: footerY, size: 8 });
 
-  return { title: `IOL Calculation Record - ${input.patientName.trim() || "unnamed"}`, texts, rules };
+  return { title: `${t.pdfTitle} - ${input.patientName.trim() || t.pdfUnnamed}`, texts, rules };
 }
 
 export function buildMedicalRecordPdf(input: MedicalRecordInput): Uint8Array {

@@ -3,7 +3,6 @@ import { A_CONSTANT, IOL_MODEL, LENS_FACTOR } from "./constants";
 import { PERSONAL_CONSTANT } from "./lenses";
 import {
   applyBiometry,
-  applyOptional,
   emptyRow,
   formatRowForClipboard,
   isRowComplete,
@@ -89,7 +88,7 @@ describe("eyeRow helpers", () => {
     expect(input.keratometry).toEqual({ k1: 44.16, k2: 45.06 });
   });
 
-  it("fills axial length and ACD from a scan without touching the optional fields", () => {
+  it("fills axial length and ACD from a scan without touching the manual-only fields", () => {
     const scanned = applyBiometry(emptyRow("OD"), {
       side: "OD",
       sideSource: "marker",
@@ -112,13 +111,6 @@ describe("eyeRow helpers", () => {
       lensThickness: 4.71,
     });
     expect(scanned.lensThickness).toBe("4.50");
-  });
-
-  it("fills each optional value on its own, keeping anything already typed", () => {
-    const typed = { ...emptyRow("OD"), wtw: "12.10" };
-    const scanned = applyOptional(typed, { side: "OD", lensThickness: 4.71 });
-    expect(scanned.lensThickness).toBe("4.71");
-    expect(scanned.wtw).toBe("12.10");
   });
 
   it("counts a row holding only optional values as non-empty", () => {
@@ -162,6 +154,6 @@ describe("planCalculation", () => {
     const partialOs = { ...emptyRow("OS"), axialLength: "22.65" };
     const plan = planCalculation(COMPLETE_OD, partialOs);
     expect(plan.ok).toBe(false);
-    if (!plan.ok) expect(plan.reason).toContain("OS");
+    if (!plan.ok) expect(plan.reason).toBe("partialOs");
   });
 });

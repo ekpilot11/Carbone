@@ -1,12 +1,6 @@
 import { A_CONSTANT, IOL_MODEL, LENS_FACTOR } from "./constants";
 import { isPersonalConstant } from "./lenses";
-import type {
-  BiometryReading,
-  EyeInput,
-  EyeSide,
-  KeratometryReading,
-  OptionalReading,
-} from "./types";
+import type { BiometryReading, EyeInput, EyeSide, KeratometryReading } from "./types";
 
 export interface EyeRowState {
   side: EyeSide;
@@ -45,28 +39,14 @@ export function applyKeratometry(row: EyeRowState, reading: KeratometryReading):
 }
 
 /**
- * The optional fields never come from here: an A-scan's own LENS line is
- * read separately (see applyOptional) so that a biometry block without one
- * cannot blank out a value the clinician typed.
+ * Lens thickness and WTW are deliberately left alone: they are entered by
+ * hand only, so a scan never overwrites (or blanks) what was typed.
  */
 export function applyBiometry(row: EyeRowState, reading: BiometryReading): EyeRowState {
   return {
     ...row,
     axialLength: reading.axialLength.toFixed(2),
     acd: reading.acd.toFixed(2),
-  };
-}
-
-/**
- * Fills the "Optional:" fields from the scan, one at a time: whichever value
- * the printout didn't show keeps whatever is already in the box.
- */
-export function applyOptional(row: EyeRowState, reading: OptionalReading): EyeRowState {
-  return {
-    ...row,
-    lensThickness:
-      reading.lensThickness !== undefined ? reading.lensThickness.toFixed(2) : row.lensThickness,
-    wtw: reading.wtw !== undefined ? reading.wtw.toFixed(2) : row.wtw,
   };
 }
 
@@ -86,7 +66,10 @@ export function isRowEmpty(row: EyeRowState): boolean {
   );
 }
 
-export type CalculationPlan = { ok: true; sides: EyeSide[] } | { ok: false; reason: string };
+/** Why a calculation can't run, as a key the UI turns into the current language. */
+export type PlanProblem = "partialOd" | "partialOs" | "empty";
+
+export type CalculationPlan = { ok: true; sides: EyeSide[] } | { ok: false; reason: PlanProblem };
 
 /**
  * The calculator accepts a single eye, so each eye must be either fully
@@ -95,19 +78,13 @@ export type CalculationPlan = { ok: true; sides: EyeSide[] } | { ok: false; reas
  */
 export function planCalculation(od: EyeRowState, os: EyeRowState): CalculationPlan {
   const partial = (row: EyeRowState) => !isRowEmpty(row) && !isRowComplete(row);
-  if (partial(od)) {
-    return { ok: false, reason: "OD (right eye) is partially filled — complete it, or clear it to calculate OS alone." };
-  }
-  if (partial(os)) {
-    return { ok: false, reason: "OS (left eye) is partially filled — complete it, or clear it to calculate OD alone." };
-  }
+  if (partial(od)) return { ok: false, reason: "partialOd" };
+  if (partial(os)) return { ok: false, reason: "partialOs" };
 
   const sides: EyeSide[] = [];
   if (isRowComplete(od)) sides.push("OD");
   if (isRowComplete(os)) sides.push("OS");
-  if (sides.length === 0) {
-    return { ok: false, reason: "Fill in every field for at least one eye to enable calculation." };
-  }
+  if (sides.length === 0) return { ok: false, reason: "empty" };
   return { ok: true, sides };
 }
 

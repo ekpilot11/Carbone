@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
+import type { Strings } from "../lib/i18n";
 
 interface CameraCaptureProps {
-  label: string;
-  hint: string;
+  t: Strings;
   onCapture: (blob: Blob) => void;
   previewUrl: string | null;
   busy: boolean;
 }
 
-export function CameraCapture({ label, hint, onCapture, previewUrl, busy }: CameraCaptureProps) {
+export function CameraCapture({ t, onCapture, previewUrl, busy }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [streaming, setStreaming] = useState(false);
@@ -29,7 +29,7 @@ export function CameraCapture({ label, hint, onCapture, previewUrl, busy }: Came
       }
       setStreaming(true);
     } catch {
-      setError("Couldn't access the camera. You can upload a photo instead.");
+      setError(t.captureNoCamera);
     }
   }
 
@@ -60,11 +60,11 @@ export function CameraCapture({ label, hint, onCapture, previewUrl, busy }: Came
 
   return (
     <div className="capture-card">
-      <h3>{label}</h3>
-      <p className="hint">{hint}</p>
+      <h3>{t.captureLabel}</h3>
+      <p className="hint">{t.captureHint}</p>
 
       {previewUrl && !streaming && (
-        <img src={previewUrl} alt={`${label} preview`} className="preview" />
+        <img src={previewUrl} alt={t.captureLabel} className="preview" />
       )}
 
       {streaming && (
@@ -78,15 +78,15 @@ export function CameraCapture({ label, hint, onCapture, previewUrl, busy }: Came
       <div className="capture-actions">
         {!streaming ? (
           <button type="button" onClick={startCamera} disabled={busy}>
-            {previewUrl ? "Retake with camera" : "Use camera"}
+            {previewUrl ? t.captureRetake : t.captureUseCamera}
           </button>
         ) : (
           <button type="button" onClick={capture} disabled={busy}>
-            Capture
+            {t.captureTake}
           </button>
         )}
         <label className="upload-btn">
-          Upload photo
+          {t.captureUpload}
           <input
             type="file"
             accept="image/*"
@@ -97,7 +97,7 @@ export function CameraCapture({ label, hint, onCapture, previewUrl, busy }: Came
         </label>
       </div>
 
-      {busy && <p className="hint">Reading numbers from the photo…</p>}
+      {busy && <p className="hint">{t.captureBusy}</p>}
     </div>
   );
 }

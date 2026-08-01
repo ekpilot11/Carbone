@@ -13,8 +13,6 @@ export const RANGES = {
   keratometry: { min: 30, max: 60 },
   axialLength: { min: 12, max: 38 },
   acd: { min: 0.5, max: 6 },
-  lensThickness: { min: 2, max: 8 },
-  wtw: { min: 8, max: 14 },
 } as const satisfies Record<string, Range>;
 
 export function inRange(value: unknown, range: Range): value is number {

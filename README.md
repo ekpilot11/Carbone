@@ -2,9 +2,9 @@
 
 Photograph the ophthalmology exam printouts once — keratometry strip and
 A-scan biometry together — and a vision model reads the keratometry (K1/K2)
-and biometry (axial length, ACD, plus lens thickness and WTW when they're
-printed) for both eyes. After you review and complete the remaining
-clinical inputs, the app drives the
+and biometry (axial length, ACD) for both eyes, plus the patient's name for
+the record. After you review and complete the remaining clinical inputs,
+the app drives the
 [Barrett Universal II calculator](https://calc.apacrs.org/barrett_universal2105/)
 to compute IOL power recommendations for cataract surgery, and can save the
 whole thing as a PDF record.
@@ -29,15 +29,15 @@ deliberate trade made to fix that.
 
 What this means in practice:
 
-- The image is sent as it was captured. If the frame includes a patient
-  name, record number, CPF, or date of birth, **that is transmitted too.**
-  A single wide shot of both printouts makes this easy to do by accident —
-  frame on the two measurement strips and keep the patient's paperwork out
-  of the picture.
-- The prompt instructs the model to return only clinical numbers and never
-  a patient identifier, and the server validates the response against
-  physiologic ranges — but that constrains what comes *back*, not what is
-  *sent*.
+- The image is sent as it was captured. Whatever is in the frame — record
+  number, CPF, date of birth, address — **is transmitted**, whether or not
+  the app asks the model to read it.
+- The prompt asks for the clinical numbers **and the patient's name**, which
+  heads the PDF record; every other identifier is excluded, and the server
+  validates the numbers against physiologic ranges. That constrains what
+  comes *back*, not what is *sent*.
+- The name is used only for the local PDF. It is never sent on to the
+  Barrett calculator, which receives a neutral "-" as its Patient Name.
 - Nothing is written to disk or logged by this app: the image is held in
   memory for the duration of the request and discarded.
 - **Check this against your institution's data protection rules (LGPD in
@@ -59,7 +59,9 @@ nothing is persisted anywhere.
 - **`frontend/`** — React + Vite app. A single camera capture (live
   `getUserMedia` view or native photo upload), image downscaling, an
   editable review form laid out like the calculator's own (measurements,
-  then its "Optional:" block), the results view, and the PDF record.
+  then its "Optional:" block, whose Lens Thickness and WTW are typed by
+  hand), the results view, the PDF record, and an English/Portuguese
+  switch in the top-right corner.
   Carries the on-device OCR fallback (Tesseract.js plus format-specific
   parsers) used when no vision model is configured.
 - **`backend/`** — Express server: `POST /api/scan` reads one photograph of
@@ -85,12 +87,15 @@ different lens.
 
 ## Medical record (PDF)
 
-After a calculation, the results view offers a one-page PDF holding K1/K2,
-axial length, ACD, the optional values, the lens and constants used, and
-each eye's IOL power table with the option closest to plano marked. The
-patient's name is typed in for the record — the scan deliberately refuses
-to read identifiers off the photograph — and **the PDF is built and saved
-entirely in the browser**, so nothing in it is transmitted anywhere.
+After a calculation, the results view offers a one-page PDF holding each
+eye's K1/K2, axial length, ACD and optional values, the lens and constants
+used, and the recommended IOL power with its predicted refraction. The full
+table of alternatives stays on screen; the record carries the decision.
+
+The patient's name is filled in from the photo when it's legible and stays
+editable — check it before saving. **The PDF is built and saved entirely in
+the browser**, so nothing in it is transmitted anywhere. It follows the
+language the app is set to.
 
 ## Status: verified working (2026-08-01)
 
