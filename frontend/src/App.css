@@ -630,3 +630,10 @@ button.secondary,
   border-top: 1px solid #eef1f4;
   font-size: 0.95rem;
 }
+
+.record-buttons,
+.batch-row-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}

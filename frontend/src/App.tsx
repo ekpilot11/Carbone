@@ -54,6 +54,7 @@ import {
   type MedicalRecordInput,
 } from "./lib/medicalRecord";
 import { downloadPdf } from "./lib/pdf";
+import { copyRecords } from "./lib/recordText";
 import { parseBiometryText } from "./lib/parseBiometry";
 import { parseTopographyText } from "./lib/parseTopography";
 import { recognizeVariants } from "./lib/ocr";
@@ -98,6 +99,7 @@ function App() {
   } | null>(null);
   const [calcError, setCalcError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [recordCopied, setRecordCopied] = useState(false);
   // The lens dropdown and its two constants. They start on this practice's
   // own values, are typed in (never read from a photo), and are replaced by
   // a lens's own constants the moment one is picked from the dropdown.
@@ -393,8 +395,9 @@ function App() {
    * those are the site's, not ours). Everything happens in the browser —
    * the file is written straight to the clinician's downloads.
    */
-  function handleDownloadRecord() {
-    if (!result || !submitted) return;
+  /** The record the download and the copy button both work from. */
+  function buildRecord(): MedicalRecordInput | null {
+    if (!result || !submitted) return null;
     const usedPersonalConstant = isPersonalConstant(submitted.settings.lens);
     const record: MedicalRecordInput = {
       patientName,
@@ -417,7 +420,20 @@ function App() {
         rows: (side === "OD" ? result.tables?.od : result.tables?.os) ?? [],
       })),
     };
-    downloadPdf(buildMedicalRecordPdf(record), medicalRecordFileName(record));
+    return record;
+  }
+
+  function handleDownloadRecord() {
+    const record = buildRecord();
+    if (record) downloadPdf(buildMedicalRecordPdf(record), medicalRecordFileName(record));
+  }
+
+  async function handleCopyRecord() {
+    const record = buildRecord();
+    if (!record) return;
+    await copyRecords([record]);
+    setRecordCopied(true);
+    setTimeout(() => setRecordCopied(false), 3000);
   }
 
   async function handleCopy() {
@@ -676,9 +692,15 @@ function App() {
                 autoComplete="off"
               />
             </label>
-            <button type="button" onClick={handleDownloadRecord}>
-              {t.recordDownload}
-            </button>
+            <div className="record-buttons">
+              <button type="button" onClick={handleCopyRecord}>
+                {recordCopied ? t.recordCopied : t.recordCopy}
+              </button>
+              <button type="button" className="secondary" onClick={handleDownloadRecord}>
+                {t.recordDownload}
+              </button>
+            </div>
+            <p className="hint">{t.recordCopyHint}</p>
           </div>
         </section>
       )}

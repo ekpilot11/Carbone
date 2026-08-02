@@ -152,6 +152,11 @@ const en = {
   recordName: "Patient name (for the record)",
   recordNamePlaceholder: "Leave blank to omit",
   recordDownload: "Download PDF record",
+  recordCopy: "Copy record as text",
+  recordCopied: "Copied — paste it into the hospital system",
+  recordCopyHint:
+    "The PDF is for filing. To paste into a hospital system, use the copy button: it puts the record on the clipboard as plain lines (and as simple rich text), which pastes cleanly where a PDF's columns would arrive jumbled.",
+  batchCopyAll: (count: number) => `Copy ${count} record${count === 1 ? "" : "s"} as text`,
 
   pdfTitle: "IOL Calculation Record",
   pdfSubtitle: "Barrett Universal II formula - calc.apacrs.org",
@@ -318,6 +323,11 @@ const pt: Strings = {
   recordName: "Nome do paciente (para o prontuário)",
   recordNamePlaceholder: "Deixe em branco para omitir",
   recordDownload: "Baixar prontuário em PDF",
+  recordCopy: "Copiar prontuário como texto",
+  recordCopied: "Copiado — cole no sistema do hospital",
+  recordCopyHint:
+    "O PDF é para arquivo. Para colar no sistema do hospital, use o botão de copiar: ele coloca o prontuário na área de transferência em linhas simples (e em texto formatado básico), que colam certo onde as colunas do PDF chegariam embaralhadas.",
+  batchCopyAll: (count: number) => `Copiar ${count} prontuário${count === 1 ? "" : "s"} como texto`,
 
   pdfTitle: "Prontuário de Cálculo de LIO",
   pdfSubtitle: "Fórmula Barrett Universal II - calc.apacrs.org",

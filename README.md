@@ -170,6 +170,20 @@ editable — check it before saving. **The PDF is built and saved entirely in
 the browser**, so nothing in it is transmitted anywhere. It follows the
 language the app is set to.
 
+### Pasting into a hospital system
+
+A PDF is a page layout, not a document: pasting one into a rich-text box
+linearises its columns, and the labels arrive separated from their values.
+So next to the download there is **Copy record as text**, which puts the
+same record on the clipboard twice over — as plain lines, one value per
+line in reading order, and as minimal HTML (paragraphs, line breaks, bold,
+no styling). A rich-text editor such as the CKEditor most hospital systems
+use takes the HTML and keeps the line breaks; a plain box gets the lines.
+Both are built in the browser; nothing is uploaded.
+
+In the batch view every row has its own copy button, and **Copy N records
+as text** takes the whole day at once.
+
 ## Status: verified working (2026-08-01)
 
 The automation was verified end-to-end against the live calculator: an

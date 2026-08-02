@@ -36,6 +36,7 @@ import {
   type MedicalRecordInput,
 } from "../lib/medicalRecord";
 import { downloadPdf } from "../lib/pdf";
+import { copyRecords } from "../lib/recordText";
 import type { EyeSide } from "../lib/types";
 
 interface BatchPanelProps {
@@ -56,6 +57,7 @@ interface BatchPanelProps {
 export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchPanelProps) {
   const [items, setItems] = useState<BatchItem[]>([]);
   const [calculating, setCalculating] = useState(false);
+  const [copied, setCopied] = useState(false);
   // Reading the newest items (and strings) inside the long-running queues
   // without making them dependencies of the effect that starts them —
   // rescanning a day's photos because the language changed would be absurd.
@@ -211,9 +213,24 @@ export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchP
     };
   }
 
+  async function copyOne(item: BatchItem) {
+    const record = recordFor(item);
+    if (record) await copyRecords([record]);
+  }
+
   function downloadOne(item: BatchItem) {
     const record = recordFor(item);
     if (record) downloadPdf(buildMedicalRecordPdf(record), medicalRecordFileName(record));
+  }
+
+  async function copyAll() {
+    const records = items
+      .map(recordFor)
+      .filter((record): record is MedicalRecordInput => record !== null);
+    if (records.length === 0) return;
+    await copyRecords(records);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 3000);
   }
 
   function downloadAll() {
@@ -253,6 +270,14 @@ export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchP
         <button
           type="button"
           className="secondary"
+          onClick={copyAll}
+          disabled={counts.done === 0}
+        >
+          {copied ? t.recordCopied : t.batchCopyAll(counts.done)}
+        </button>
+        <button
+          type="button"
+          className="secondary"
           onClick={downloadAll}
           disabled={counts.done === 0}
         >
@@ -271,6 +296,7 @@ export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchP
             onName={(name) => update(item.id, { patientName: name })}
             onField={(side, field, value) => updateField(item.id, side, field, value)}
             onDownload={() => downloadOne(item)}
+            onCopy={() => copyOne(item)}
           />
         ))}
       </ol>
@@ -285,9 +311,10 @@ interface BatchRowProps {
   onName: (name: string) => void;
   onField: (side: EyeSide, field: keyof EyeRowState, value: string) => void;
   onDownload: () => void;
+  onCopy: () => void;
 }
 
-function BatchRow({ t, index, item, onName, onField, onDownload }: BatchRowProps) {
+function BatchRow({ t, index, item, onName, onField, onDownload, onCopy }: BatchRowProps) {
   const statusLabel: Record<BatchItem["status"], string> = {
     scanning: t.batchStatusScanning,
     ready: t.batchStatusReady,
@@ -386,9 +413,14 @@ function BatchRow({ t, index, item, onName, onField, onDownload }: BatchRowProps
               </strong>
             )}
           </span>
-          <button type="button" className="secondary" onClick={onDownload}>
-            {t.recordDownload}
-          </button>
+          <span className="batch-row-buttons">
+            <button type="button" className="secondary" onClick={onCopy}>
+              {t.recordCopy}
+            </button>
+            <button type="button" className="secondary" onClick={onDownload}>
+              {t.recordDownload}
+            </button>
+          </span>
         </div>
       )}
     </li>
