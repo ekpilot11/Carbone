@@ -17,6 +17,7 @@ import {
   emptyRow,
   formatRowForClipboard,
   isRowEmpty,
+  missingFields,
   planCalculation,
   toEyeInput,
   type EyeRowState,
@@ -340,12 +341,23 @@ function App() {
       : !constantInRange(constants.aConstant, CONSTANT_RANGES.aConstant)
         ? t.planBadAConstant(CONSTANT_RANGES.aConstant.min, CONSTANT_RANGES.aConstant.max)
         : null;
+  // Names the values an eye is short of, so "left out" is never a mystery.
+  const fieldLabels: Record<ReturnType<typeof missingFields>[number], string> = {
+    axialLength: t.fieldAxialLength,
+    k1: t.fieldK1,
+    k2: t.fieldK2,
+    acd: t.fieldAcd,
+    targetRefraction: t.fieldRefraction,
+  };
+  const missingFor = (side: EyeSide) =>
+    missingFields(rows[side]).map((field) => fieldLabels[field]).join(", ");
+  const skippedNotes = plan.skipped.map((side) =>
+    t.planSkipped(side === "OD" ? t.eyeOd : t.eyeOs, missingFor(side)),
+  );
   const planProblem = !plan.ok
-    ? plan.reason === "partialOd"
-      ? t.planPartialOd
-      : plan.reason === "partialOs"
-        ? t.planPartialOs
-        : t.planEmpty
+    ? plan.reason === "nothingComplete"
+      ? skippedNotes.join(" ")
+      : t.planEmpty
     : constantsProblem;
   const canCalculate = plan.ok && constantsProblem === null;
 
@@ -579,6 +591,9 @@ function App() {
           {t.openCalculator}
         </a>
         {planProblem && <p className="hint">{planProblem}</p>}
+        {plan.ok && skippedNotes.length > 0 && (
+          <p className="scan-message">{skippedNotes.join(" ")}</p>
+        )}
         {calculating && <p className="hint">{t.cloudflareHint}</p>}
       </section>
       )}

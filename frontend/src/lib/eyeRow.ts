@@ -66,26 +66,41 @@ export function isRowEmpty(row: EyeRowState): boolean {
   );
 }
 
-/** Why a calculation can't run, as a key the UI turns into the current language. */
-export type PlanProblem = "partialOd" | "partialOs" | "empty";
+/** The values the calculator needs before it will accept an eye. */
+export const REQUIRED_FIELDS = ["axialLength", "k1", "k2", "acd", "targetRefraction"] as const;
+export type RequiredField = (typeof REQUIRED_FIELDS)[number];
 
-export type CalculationPlan = { ok: true; sides: EyeSide[] } | { ok: false; reason: PlanProblem };
+/** Which required values this eye is still missing, in form order. */
+export function missingFields(row: EyeRowState): RequiredField[] {
+  return REQUIRED_FIELDS.filter((field) => row[field].trim() === "");
+}
+
+/** Why nothing can be calculated, as a key the UI turns into the current language. */
+export type PlanProblem = "empty" | "nothingComplete";
+
+export type CalculationPlan =
+  | { ok: true; sides: EyeSide[]; skipped: EyeSide[] }
+  | { ok: false; reason: PlanProblem; skipped: EyeSide[] };
 
 /**
- * The calculator accepts a single eye, so each eye must be either fully
- * filled in or fully empty — a half-filled eye is treated as a mistake
- * rather than silently dropped.
+ * Decides which eyes go to the calculator.
+ *
+ * An eye is sent only when every value it needs is there. A half-read eye —
+ * K values but no axial length, say, which is what a photo of a two-eye
+ * topography strip and a one-eye A-scan gives you — is left out rather than
+ * submitted incomplete, and the caller names it so the omission is visible.
+ * The calculator accepts a single eye, so the other one still runs.
  */
 export function planCalculation(od: EyeRowState, os: EyeRowState): CalculationPlan {
-  const partial = (row: EyeRowState) => !isRowEmpty(row) && !isRowComplete(row);
-  if (partial(od)) return { ok: false, reason: "partialOd" };
-  if (partial(os)) return { ok: false, reason: "partialOs" };
+  const rows: Record<EyeSide, EyeRowState> = { OD: od, OS: os };
+  const sides = (["OD", "OS"] as const).filter((side) => isRowComplete(rows[side]));
+  // "Skipped" means started but unfinished; an untouched eye is simply absent.
+  const skipped = (["OD", "OS"] as const).filter(
+    (side) => !isRowEmpty(rows[side]) && !isRowComplete(rows[side]),
+  );
 
-  const sides: EyeSide[] = [];
-  if (isRowComplete(od)) sides.push("OD");
-  if (isRowComplete(os)) sides.push("OS");
-  if (sides.length === 0) return { ok: false, reason: "empty" };
-  return { ok: true, sides };
+  if (sides.length > 0) return { ok: true, sides, skipped };
+  return { ok: false, reason: skipped.length > 0 ? "nothingComplete" : "empty", skipped };
 }
 
 function optionalNumber(value: string): number | undefined {

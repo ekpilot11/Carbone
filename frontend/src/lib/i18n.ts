@@ -97,8 +97,10 @@ const en = {
   copied: "Copied!",
   openCalculator: "Open calculator manually",
   noValuesToCopy: "No values entered yet.",
-  planPartialOd: "OD (right eye) is partially filled — complete it, or clear it to calculate OS alone.",
-  planPartialOs: "OS (left eye) is partially filled — complete it, or clear it to calculate OD alone.",
+  planSkipped: (side: string, fields: string) =>
+    `${side} is missing ${fields}, so it is left out of the calculation — the calculator would reject it. Fill those in to include it.`,
+  planNothingComplete: (fields: string) =>
+    `No eye has all its values yet — ${fields} still missing. Fill them in to calculate.`,
   planEmpty: "Fill in every field for at least one eye to enable calculation.",
   cloudflareHint:
     'Usually nothing else is needed. If the calculator site asks for a security check, a browser window opens on the computer running the backend — click "Verify you are human" there and the calculation continues automatically.',
@@ -132,8 +134,8 @@ const en = {
     "Calculations run two at a time against the official calculator, so a full day takes a couple of minutes. You can keep this tab open and check the results as they land.",
   batchScanUnavailable:
     "Batch reading needs the server's vision model (ANTHROPIC_API_KEY). Without it, photos have to be read one at a time on this device.",
-  batchPartialEye: (sides: string) =>
-    `${sides} is only half filled in — complete it or clear it, otherwise that eye is left out of the calculation.`,
+  batchPartialEye: (side: string, fields: string) =>
+    `${side} is missing ${fields}, so it is left out of this patient's calculation. Fill those in to include it.`,
   batchStale:
     "These values changed after the calculation — the result below is from the old ones. Calculate again to update it.",
   batchStaleCount: (count: number) => `${count} changed after being calculated.`,
@@ -261,10 +263,10 @@ const pt: Strings = {
   copied: "Copiado!",
   openCalculator: "Abrir a calculadora manualmente",
   noValuesToCopy: "Nenhum valor digitado ainda.",
-  planPartialOd:
-    "OD (olho direito) está preenchido pela metade — complete-o ou limpe-o para calcular só o OS.",
-  planPartialOs:
-    "OS (olho esquerdo) está preenchido pela metade — complete-o ou limpe-o para calcular só o OD.",
+  planSkipped: (side: string, fields: string) =>
+    `Falta ${fields} no ${side}, então ele fica de fora do cálculo — a calculadora o rejeitaria. Preencha esses valores para incluí-lo.`,
+  planNothingComplete: (fields: string) =>
+    `Nenhum olho tem todos os valores ainda — falta ${fields}. Preencha para calcular.`,
   planEmpty: "Preencha todos os campos de pelo menos um olho para liberar o cálculo.",
   cloudflareHint:
     'Normalmente nada mais é preciso. Se o site da calculadora pedir verificação de segurança, uma janela do navegador abre no computador que roda o backend — clique em "Verify you are human" lá e o cálculo continua sozinho.',
@@ -298,8 +300,8 @@ const pt: Strings = {
     "Os cálculos rodam dois por vez na calculadora oficial, então um dia inteiro leva alguns minutos. Você pode deixar esta aba aberta e acompanhar os resultados chegando.",
   batchScanUnavailable:
     "A leitura em lote precisa do modelo de visão no servidor (ANTHROPIC_API_KEY). Sem ele, as fotos precisam ser lidas uma a uma neste dispositivo.",
-  batchPartialEye: (sides: string) =>
-    `${sides} está preenchido pela metade — complete-o ou limpe-o; caso contrário esse olho fica de fora do cálculo.`,
+  batchPartialEye: (side: string, fields: string) =>
+    `Falta ${fields} no ${side}, então ele fica de fora do cálculo deste paciente. Preencha esses valores para incluí-lo.`,
   batchStale:
     "Estes valores mudaram depois do cálculo — o resultado abaixo é dos valores antigos. Calcule de novo para atualizar.",
   batchStaleCount: (count: number) => `${count} mudaram depois de calculados.`,

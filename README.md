@@ -135,14 +135,28 @@ Rows that need attention say so rather than passing quietly:
 
 - a photo that couldn't be read completely is counted separately and
   skipped unless you fill it in;
-- an eye that is only half filled in is named on the row — that eye is left
-  out of the calculation, never silently included;
+- an eye that was only half read is named on the row, along with the values
+  it lacks — that eye is left out of the calculation, never silently
+  included;
 - editing a row after it was calculated marks the result as out of date,
   and the record keeps reporting the values that actually produced it until
   you calculate again.
 
 Finish with **Download N records (one PDF)** — a single file, one page per
 patient, in upload order — or take any single patient's record on its own.
+
+## Eyes are all-or-nothing
+
+The calculator rejects an eye that is missing any of axial length, K1, K2,
+optical ACD or target refraction — so an eye is sent only when it has all of
+them. This comes up in practice: photograph a two-eye topography strip
+beside a one-eye A-scan and you get K values for both eyes but biometry for
+one.
+
+That eye is left out of the run and the other still calculates, with the app
+naming the eye and the exact values it lacks ("OD is missing Axial Length,
+Optical ACD…"). Fill them in and it joins the next calculation. The same
+rule and the same message apply per row in the batch view.
 
 ## Medical record (PDF)
 

@@ -17,7 +17,14 @@ import {
   SCAN_CONCURRENCY,
   type BatchItem,
 } from "../lib/batch";
-import { applyBiometry, applyKeratometry, toEyeInput, type EyeRowState, type LensSettings } from "../lib/eyeRow";
+import {
+  applyBiometry,
+  applyKeratometry,
+  missingFields,
+  toEyeInput,
+  type EyeRowState,
+  type LensSettings,
+} from "../lib/eyeRow";
 import type { Lang, Strings } from "../lib/i18n";
 import { prepareImage } from "../lib/imagePrep";
 import { isPersonalConstant } from "../lib/lenses";
@@ -304,6 +311,13 @@ function BatchRow({ t, index, item, onName, onField, onDownload }: BatchRowProps
   const recommended = item.result?.recommended;
   const partial = partialSides(item);
   const stale = isStale(item);
+  const fieldLabels: Record<ReturnType<typeof missingFields>[number], string> = {
+    axialLength: t.fieldAxialLength,
+    k1: t.fieldK1,
+    k2: t.fieldK2,
+    acd: t.fieldAcd,
+    targetRefraction: t.fieldRefraction,
+  };
 
   return (
     <li className={`batch-item batch-${item.status}`}>
@@ -325,9 +339,16 @@ function BatchRow({ t, index, item, onName, onField, onDownload }: BatchRowProps
 
       {item.error && <p className="batch-error">{item.error}</p>}
       {item.note && <p className="batch-note">{item.note}</p>}
-      {partial.length > 0 && (
-        <p className="batch-note">{t.batchPartialEye(partial.join(" / "))}</p>
-      )}
+      {partial.map((side) => (
+        <p className="batch-note" key={side}>
+          {t.batchPartialEye(
+            side === "OD" ? t.eyeOd : t.eyeOs,
+            missingFields(item.rows[side])
+              .map((field) => fieldLabels[field])
+              .join(", "),
+          )}
+        </p>
+      ))}
       {stale && <p className="batch-note">{t.batchStale}</p>}
 
       {item.status !== "scanning" && (

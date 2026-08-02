@@ -7,6 +7,7 @@ import {
   formatRowForClipboard,
   isRowComplete,
   isRowEmpty,
+  missingFields,
   planCalculation,
   toEyeInput,
   type LensSettings,
@@ -155,23 +156,46 @@ describe("eyeRow helpers", () => {
 
 describe("planCalculation", () => {
   it("plans both eyes when both are complete", () => {
-    expect(planCalculation(COMPLETE_OD, COMPLETE_OS)).toEqual({ ok: true, sides: ["OD", "OS"] });
+    expect(planCalculation(COMPLETE_OD, COMPLETE_OS)).toEqual({
+      ok: true,
+      sides: ["OD", "OS"],
+      skipped: [],
+    });
   });
 
   it("plans a single eye when the other is empty", () => {
-    expect(planCalculation(COMPLETE_OD, emptyRow("OS"))).toEqual({ ok: true, sides: ["OD"] });
-    expect(planCalculation(emptyRow("OD"), COMPLETE_OS)).toEqual({ ok: true, sides: ["OS"] });
+    expect(planCalculation(COMPLETE_OD, emptyRow("OS"))).toEqual({
+      ok: true,
+      sides: ["OD"],
+      skipped: [],
+    });
   });
 
   it("refuses when no eye is filled", () => {
     const plan = planCalculation(emptyRow("OD"), emptyRow("OS"));
-    expect(plan.ok).toBe(false);
+    expect(plan).toEqual({ ok: false, reason: "empty", skipped: [] });
   });
 
-  it("refuses a partially filled eye instead of silently dropping it", () => {
-    const partialOs = { ...emptyRow("OS"), axialLength: "22.65" };
-    const plan = planCalculation(COMPLETE_OD, partialOs);
-    expect(plan.ok).toBe(false);
-    if (!plan.ok) expect(plan.reason).toBe("partialOs");
+  /**
+   * The case a photo of a two-eye topography strip and a one-eye A-scan
+   * produces: K values for both, biometry for one. The half-read eye has to
+   * stay out of the request — the calculator rejects an incomplete eye — but
+   * the other one must still calculate.
+   */
+  it("leaves a half-read eye out and calculates the other", () => {
+    const halfOd = { ...emptyRow("OD"), k1: "42.70", k2: "37.73" };
+    const plan = planCalculation(halfOd, COMPLETE_OS);
+    expect(plan).toEqual({ ok: true, sides: ["OS"], skipped: ["OD"] });
+  });
+
+  it("names exactly what a half-read eye is missing", () => {
+    const halfOd = { ...emptyRow("OD"), k1: "42.70", k2: "37.73" };
+    expect(missingFields(halfOd)).toEqual(["axialLength", "acd"]);
+    expect(missingFields(COMPLETE_OD)).toEqual([]);
+  });
+
+  it("refuses, naming the gap, when neither eye is complete", () => {
+    const plan = planCalculation({ ...emptyRow("OD"), k1: "42.70" }, emptyRow("OS"));
+    expect(plan).toEqual({ ok: false, reason: "nothingComplete", skipped: ["OD"] });
   });
 });
