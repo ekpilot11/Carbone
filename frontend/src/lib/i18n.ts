@@ -152,11 +152,23 @@ const en = {
   recordName: "Patient name (for the record)",
   recordNamePlaceholder: "Leave blank to omit",
   recordDownload: "Download PDF record",
-  recordCopy: "Copy record as text",
+  recordOpeningLine: "PATIENT ATTENDED FOR EXAMS:",
+  recordBiometry: "BIOMETRY:",
+  recordTopography: "TOPOGRAPHY:",
+  recordLensCalculation: "LENS CALCULATION:",
+  recordLensLine: "Recommended IOL",
+  recordCopy: "Copy record",
+  recordCopySource: "Copy as source code (HTML)",
+  recordSourceHint:
+    'Two ways to paste into the hospital system. "Copy record" works for a normal paste. If the editor drops the spacing, use "Copy as source code", click Código-Fonte there, paste, and click it again — nothing filters a paste made in that view.',
+  recordShowSource: "Show the source code",
   recordCopied: "Copied — paste it into the hospital system",
+  recordSourceCopied: "Source code copied — paste it in Código-Fonte",
   recordCopyHint:
-    "The PDF is for filing. To paste into a hospital system, use the copy button: it puts the record on the clipboard as plain lines (and as simple rich text), which pastes cleanly where a PDF's columns would arrive jumbled.",
-  batchCopyAll: (count: number) => `Copy ${count} record${count === 1 ? "" : "s"} as text`,
+    "The PDF is for filing; the copy buttons are for pasting into a hospital system, laid out the way its own notes are written.",
+  batchCopyAll: (count: number) => `Copy ${count} record${count === 1 ? "" : "s"}`,
+  batchCopySourceAll: (count: number) =>
+    `Copy ${count} record${count === 1 ? "" : "s"} as source code`,
 
   pdfTitle: "IOL Calculation Record",
   pdfSubtitle: "Barrett Universal II formula - calc.apacrs.org",
@@ -323,11 +335,23 @@ const pt: Strings = {
   recordName: "Nome do paciente (para o prontuário)",
   recordNamePlaceholder: "Deixe em branco para omitir",
   recordDownload: "Baixar prontuário em PDF",
-  recordCopy: "Copiar prontuário como texto",
+  recordOpeningLine: "PACIENTE VEM PARA REALIZAR EXAMES:",
+  recordBiometry: "BIOMETRIA:",
+  recordTopography: "TOPOGRAFIA:",
+  recordLensCalculation: "CALCULO DA LENTE:",
+  recordLensLine: "LIO recomendada",
+  recordCopy: "Copiar prontuário",
+  recordCopySource: "Copiar código-fonte (HTML)",
+  recordSourceHint:
+    'Duas formas de colar no sistema do hospital. "Copiar prontuário" serve para colar normalmente. Se o editor perder o espaçamento, use "Copiar código-fonte", clique em Código-Fonte lá, cole e clique de novo — nada filtra o que é colado nessa visão.',
+  recordShowSource: "Ver o código-fonte",
   recordCopied: "Copiado — cole no sistema do hospital",
+  recordSourceCopied: "Código-fonte copiado — cole em Código-Fonte",
   recordCopyHint:
-    "O PDF é para arquivo. Para colar no sistema do hospital, use o botão de copiar: ele coloca o prontuário na área de transferência em linhas simples (e em texto formatado básico), que colam certo onde as colunas do PDF chegariam embaralhadas.",
-  batchCopyAll: (count: number) => `Copiar ${count} prontuário${count === 1 ? "" : "s"} como texto`,
+    "O PDF é para arquivo; os botões de copiar são para colar no sistema do hospital, no mesmo formato das evoluções de lá.",
+  batchCopyAll: (count: number) => `Copiar ${count} prontuário${count === 1 ? "" : "s"}`,
+  batchCopySourceAll: (count: number) =>
+    `Copiar ${count} prontuário${count === 1 ? "" : "s"} como código-fonte`,
 
   pdfTitle: "Prontuário de Cálculo de LIO",
   pdfSubtitle: "Fórmula Barrett Universal II - calc.apacrs.org",

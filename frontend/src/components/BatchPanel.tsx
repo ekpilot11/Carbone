@@ -36,7 +36,7 @@ import {
   type MedicalRecordInput,
 } from "../lib/medicalRecord";
 import { downloadPdf } from "../lib/pdf";
-import { copyRecords } from "../lib/recordText";
+import { copyRecords, copyRecordSource } from "../lib/recordText";
 import type { EyeSide } from "../lib/types";
 
 interface BatchPanelProps {
@@ -57,7 +57,7 @@ interface BatchPanelProps {
 export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchPanelProps) {
   const [items, setItems] = useState<BatchItem[]>([]);
   const [calculating, setCalculating] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"rich" | "source" | null>(null);
   // Reading the newest items (and strings) inside the long-running queues
   // without making them dependencies of the effect that starts them —
   // rescanning a day's photos because the language changed would be absurd.
@@ -213,9 +213,10 @@ export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchP
     };
   }
 
-  async function copyOne(item: BatchItem) {
+  async function copyOne(item: BatchItem, asSource: boolean) {
     const record = recordFor(item);
-    if (record) await copyRecords([record]);
+    if (!record) return;
+    await (asSource ? copyRecordSource([record]) : copyRecords([record]));
   }
 
   function downloadOne(item: BatchItem) {
@@ -223,14 +224,14 @@ export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchP
     if (record) downloadPdf(buildMedicalRecordPdf(record), medicalRecordFileName(record));
   }
 
-  async function copyAll() {
+  async function copyAll(asSource: boolean) {
     const records = items
       .map(recordFor)
       .filter((record): record is MedicalRecordInput => record !== null);
     if (records.length === 0) return;
-    await copyRecords(records);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 3000);
+    await (asSource ? copyRecordSource(records) : copyRecords(records));
+    setCopied(asSource ? "source" : "rich");
+    setTimeout(() => setCopied(null), 3000);
   }
 
   function downloadAll() {
@@ -270,10 +271,18 @@ export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchP
         <button
           type="button"
           className="secondary"
-          onClick={copyAll}
+          onClick={() => copyAll(false)}
           disabled={counts.done === 0}
         >
-          {copied ? t.recordCopied : t.batchCopyAll(counts.done)}
+          {copied === "rich" ? t.recordCopied : t.batchCopyAll(counts.done)}
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => copyAll(true)}
+          disabled={counts.done === 0}
+        >
+          {copied === "source" ? t.recordSourceCopied : t.batchCopySourceAll(counts.done)}
         </button>
         <button
           type="button"
@@ -296,7 +305,7 @@ export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchP
             onName={(name) => update(item.id, { patientName: name })}
             onField={(side, field, value) => updateField(item.id, side, field, value)}
             onDownload={() => downloadOne(item)}
-            onCopy={() => copyOne(item)}
+            onCopy={(asSource) => copyOne(item, asSource)}
           />
         ))}
       </ol>
@@ -311,7 +320,7 @@ interface BatchRowProps {
   onName: (name: string) => void;
   onField: (side: EyeSide, field: keyof EyeRowState, value: string) => void;
   onDownload: () => void;
-  onCopy: () => void;
+  onCopy: (asSource: boolean) => void;
 }
 
 function BatchRow({ t, index, item, onName, onField, onDownload, onCopy }: BatchRowProps) {
@@ -414,8 +423,11 @@ function BatchRow({ t, index, item, onName, onField, onDownload, onCopy }: Batch
             )}
           </span>
           <span className="batch-row-buttons">
-            <button type="button" className="secondary" onClick={onCopy}>
+            <button type="button" className="secondary" onClick={() => onCopy(false)}>
               {t.recordCopy}
+            </button>
+            <button type="button" className="secondary" onClick={() => onCopy(true)}>
+              {t.recordCopySource}
             </button>
             <button type="button" className="secondary" onClick={onDownload}>
               {t.recordDownload}

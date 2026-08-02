@@ -174,15 +174,31 @@ language the app is set to.
 
 A PDF is a page layout, not a document: pasting one into a rich-text box
 linearises its columns, and the labels arrive separated from their values.
-So next to the download there is **Copy record as text**, which puts the
-same record on the clipboard twice over — as plain lines, one value per
-line in reading order, and as minimal HTML (paragraphs, line breaks, bold,
-no styling). A rich-text editor such as the CKEditor most hospital systems
-use takes the HTML and keeps the line breaks; a plain box gets the lines.
-Both are built in the browser; nothing is uploaded.
+So the record is also produced as text, laid out the way the clinic's own
+notes are written (transcribed from the source of a record they had
+formatted by hand):
 
-In the batch view every row has its own copy button, and **Copy N records
-as text** takes the whole day at once.
+```
+BIOMETRIA:        OD / OE, then AXL and ACD, one per line
+TOPOGRAFIA:       OD: / OE:, then K1 and K2
+CALCULO DA LENTE: one line per eye, the power set larger
+```
+
+Two buttons, because hospital editors filter pastes differently:
+
+- **Copy record** — normal paste. The clipboard carries rich text (16px
+  body, bold headings, blank paragraphs for the gaps) and plain lines
+  together; the editor takes whichever it prefers.
+- **Copy as source code (HTML)** — for the editor's own *Código-Fonte*
+  view. Paste there and toggle back, and the layout arrives exactly as
+  built, because nothing filters a paste made in that view. The same markup
+  is shown on screen under "Show the source code" for selecting by hand if
+  the clipboard is blocked.
+
+Both are built in the browser; nothing is uploaded. The record names the
+eye on every power (`OD - LIO recomendada: 23.5 D`), and ends with the lens,
+constants and K index that produced them. In the batch view each row has
+both buttons, and the header pair copies the whole day at once.
 
 ## Status: verified working (2026-08-01)
 

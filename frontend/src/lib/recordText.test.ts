@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyRow } from "./eyeRow";
 import type { MedicalRecordInput } from "./medicalRecord";
-import { recordToHtml, recordToText } from "./recordText";
+import { recordsToSource, recordToHtml, recordToText } from "./recordText";
 
 const RECORD: MedicalRecordInput = {
   patientName: "Carlos Alberto <Bombonato>",
@@ -30,48 +30,68 @@ const RECORD: MedicalRecordInput = {
 };
 
 describe("record as pasteable text", () => {
-  it("puts every value on its own line, under its own label", () => {
+  it("follows the hospital's own note layout, one value per line", () => {
     const lines = recordToText(RECORD).split("\n");
-    expect(lines).toContain("Comprimento axial: 23.09 mm");
-    expect(lines).toContain("K1 medido: 43.23 D");
-    expect(lines).toContain("ACD óptica: 4.20 mm");
-    expect(lines).toContain("LIO recomendada: 23.00 D (refração prevista -0.10 D)");
+    expect(lines).toContain("BIOMETRIA:");
+    expect(lines).toContain("OD");
+    expect(lines).toContain("AXL: 23.09 mm");
+    expect(lines).toContain("ACD: 4.20 mm");
+    expect(lines).toContain("TOPOGRAFIA:");
+    expect(lines).toContain("OD:");
+    expect(lines).toContain("K1: 43.23");
+    expect(lines).toContain("K2: 43.34");
+    expect(lines).toContain("CALCULO DA LENTE:");
     // The failure this replaces: labels bunched together, values after them.
-    expect(recordToText(RECORD)).not.toContain("Comprimento axial: ACD óptica:");
+    expect(recordToText(RECORD)).not.toContain("AXL: ACD:");
+  });
+
+  it("labels the left eye OE in Portuguese and OS in English", () => {
+    const both: MedicalRecordInput = {
+      ...RECORD,
+      eyes: [RECORD.eyes[0], { ...RECORD.eyes[0], side: "OS" }],
+    };
+    expect(recordToText(both)).toContain("OE");
+    expect(recordToText({ ...both, lang: "en" })).toContain("OS");
+  });
+
+  it("names the eye on every recommended power", () => {
+    const text = recordToText(RECORD);
+    expect(text).toContain("OD - LIO recomendada: 23.00 D (refração prevista -0.10 D)");
   });
 
   it("omits values that were never measured rather than printing blanks", () => {
     const text = recordToText(RECORD);
     expect(text).not.toContain("WTW");
-    expect(text).not.toContain("Espessura do cristalino");
+    expect(text).not.toContain("LENS:");
   });
 
-  it("carries the patient, lens, constants and K index", () => {
+  it("records which lens and index produced the powers", () => {
     const text = recordToText(RECORD);
-    expect(text).toContain("Paciente: Carlos Alberto <Bombonato>");
     expect(text).toContain("Lente: Personal Constant (Lens Factor 1.57, Constante A 118.4)");
     expect(text).toContain("Índice K: 1.3375");
-    expect(text).toContain("01/08/2026");
-  });
-
-  it("follows the app's language", () => {
-    const text = recordToText({ ...RECORD, lang: "en" });
-    expect(text).toContain("Axial Length: 23.09 mm");
-    expect(text).toContain("Recommended IOL: 23.00 D (predicted refraction -0.10 D)");
   });
 });
 
-describe("record as HTML", () => {
-  it("uses line breaks a rich-text editor keeps", () => {
+describe("record as source code", () => {
+  it("uses the editor's own markup: sized spans, bold headings, blank paragraphs", () => {
     const html = recordToHtml(RECORD);
-    expect(html).toContain("Comprimento axial: 23.09 mm<br>");
-    expect(html).toContain("<strong>OD - Olho direito</strong>");
-    expect(html).not.toMatch(/style=|class=/);
+    expect(html).toContain('<p><strong><span style="font-size:16px;">BIOMETRIA:</span></strong></p>');
+    expect(html).toContain('<p><span style="font-size:16px;">AXL: 23.09 mm</span></p>');
+    expect(html).toContain("<p>&nbsp;</p>");
+    // The power itself is the one thing set larger.
+    expect(html).toContain('<span style="font-size:20px;">23.00 D</span>');
+    // The prediction stays at body size beside it.
+    expect(html).toContain('<span style="font-size:16px;"> (refração prevista -0.10 D)</span>');
+    expect(html).not.toMatch(/class=|<table|<div/);
   });
 
   it("escapes markup in a patient's name", () => {
-    const html = recordToHtml(RECORD);
-    expect(html).toContain("Carlos Alberto &lt;Bombonato&gt;");
-    expect(html).not.toContain("<Bombonato>");
+    const html = recordToHtml({ ...RECORD, patientName: "Ana <b>Souza</b>" });
+    expect(html).not.toContain("<b>Souza</b>");
+  });
+
+  it("separates patients when a whole batch is copied", () => {
+    const source = recordsToSource([RECORD, RECORD]);
+    expect(source.match(/BIOMETRIA:/g)).toHaveLength(2);
   });
 });

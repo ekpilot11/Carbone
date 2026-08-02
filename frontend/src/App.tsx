@@ -54,7 +54,7 @@ import {
   type MedicalRecordInput,
 } from "./lib/medicalRecord";
 import { downloadPdf } from "./lib/pdf";
-import { copyRecords } from "./lib/recordText";
+import { copyRecords, copyRecordSource, recordsToSource } from "./lib/recordText";
 import { parseBiometryText } from "./lib/parseBiometry";
 import { parseTopographyText } from "./lib/parseTopography";
 import { recognizeVariants } from "./lib/ocr";
@@ -99,7 +99,7 @@ function App() {
   } | null>(null);
   const [calcError, setCalcError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [recordCopied, setRecordCopied] = useState(false);
+  const [recordCopied, setRecordCopied] = useState<"rich" | "source" | null>(null);
   // The lens dropdown and its two constants. They start on this practice's
   // own values, are typed in (never read from a photo), and are replaced by
   // a lens's own constants the moment one is picked from the dropdown.
@@ -428,13 +428,18 @@ function App() {
     if (record) downloadPdf(buildMedicalRecordPdf(record), medicalRecordFileName(record));
   }
 
-  async function handleCopyRecord() {
+  async function handleCopyRecord(asSource: boolean) {
     const record = buildRecord();
     if (!record) return;
-    await copyRecords([record]);
-    setRecordCopied(true);
-    setTimeout(() => setRecordCopied(false), 3000);
+    await (asSource ? copyRecordSource([record]) : copyRecords([record]));
+    setRecordCopied(asSource ? "source" : "rich");
+    setTimeout(() => setRecordCopied(null), 3000);
   }
+
+  // Kept on screen as well as on the clipboard: some browsers block
+  // clipboard writes, and selecting it by hand always works.
+  const record = result && submitted ? buildRecord() : null;
+  const sourceForCopy = record ? recordsToSource([record]) : "";
 
   async function handleCopy() {
     const sections: string[] = [];
@@ -693,14 +698,21 @@ function App() {
               />
             </label>
             <div className="record-buttons">
-              <button type="button" onClick={handleCopyRecord}>
-                {recordCopied ? t.recordCopied : t.recordCopy}
+              <button type="button" onClick={() => handleCopyRecord(false)}>
+                {recordCopied === "rich" ? t.recordCopied : t.recordCopy}
+              </button>
+              <button type="button" onClick={() => handleCopyRecord(true)}>
+                {recordCopied === "source" ? t.recordSourceCopied : t.recordCopySource}
               </button>
               <button type="button" className="secondary" onClick={handleDownloadRecord}>
                 {t.recordDownload}
               </button>
             </div>
-            <p className="hint">{t.recordCopyHint}</p>
+            <p className="hint">{t.recordSourceHint}</p>
+            <details className="raw-details record-source">
+              <summary>{t.recordShowSource}</summary>
+              <textarea readOnly rows={12} value={sourceForCopy} />
+            </details>
           </div>
         </section>
       )}

@@ -637,3 +637,18 @@ button.secondary,
   gap: 0.5rem;
   flex-wrap: wrap;
 }
+
+.record-source {
+  width: 100%;
+}
+
+.record-source textarea {
+  width: 100%;
+  font-family: ui-monospace, "Cascadia Mono", Menlo, monospace;
+  font-size: 0.75rem;
+  padding: 0.6rem;
+  border: 1px solid #ccd3db;
+  border-radius: 6px;
+  background: #f4f6f8;
+  color: #1a1f27;
+}
