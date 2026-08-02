@@ -2,17 +2,16 @@ import { STRINGS, type Lang } from "./i18n";
 import { closestToPlano, type MedicalRecordInput } from "./medicalRecord";
 
 /**
- * The record written the way the hospital system's own notes are written —
- * copied from the source code of a record the clinician had formatted by
- * hand: BIOMETRIA / TOPOGRAFIA / CALCULO DA LENTE, each eye labelled, one
- * value per line, blank paragraphs between blocks, 16px body text and the
- * recommended power at 20px.
+ * The record written exactly as the hospital system's own notes are —
+ * transcribed from the source code of a record the clinician had formatted
+ * by hand, down to the sized spans, the bold headings and the empty
+ * paragraphs that carry the spacing.
  *
- * A PDF is a page layout, not a document — pasting one linearises its
+ * A PDF is a page layout, not a document: pasting one linearises its
  * columns and the values land away from their labels. So the record is
- * rebuilt as text here, in two forms: this markup, for a normal paste or
- * for the editor's "Código-Fonte" view (where no paste filter can touch
- * it), and a plain-lines version for anywhere that takes only text.
+ * rebuilt as text here — as that markup, for a normal paste or for the
+ * editor's "Código-Fonte" view, and as plain lines for anywhere that takes
+ * no formatting at all.
  */
 
 /** The editor zeroes paragraph margins, so gaps are real (empty) paragraphs. */
@@ -20,115 +19,117 @@ const SPACER = "<p>&nbsp;</p>";
 const BODY_PX = 16;
 const POWER_PX = 20;
 
-interface Block {
-  heading?: string;
-  /** "" is a deliberate blank line inside the block. */
-  lines: string[];
-  /** The recommendation block: bold, with the power itself enlarged. */
-  emphasis?: boolean;
-}
-
-function present(raw: string): boolean {
-  return raw.trim() !== "";
-}
-
 /** Portuguese records label the left eye OE, not OS. */
 function eyeLabel(lang: Lang, side: "OD" | "OS"): string {
   return side === "OD" ? "OD" : lang === "pt" ? "OE" : "OS";
 }
 
-/** The recommended power, split so the number can be set larger than its label. */
-function recommendation(
-  input: MedicalRecordInput,
-  eye: MedicalRecordInput["eyes"][number],
-): { label: string; power?: string; note?: string } {
-  const t = STRINGS[input.lang];
-  const best = closestToPlano(eye.rows);
-  const bestRow = best >= 0 ? eye.rows[best] : undefined;
-  const power = eye.recommended ?? bestRow?.power;
-  const side = eyeLabel(input.lang, eye.side);
-
-  if (power === undefined) return { label: `${side} - ${t.pdfNoRecommendation}` };
-  const refraction =
-    bestRow && (eye.recommended === undefined || eye.recommended === bestRow.power)
-      ? bestRow.refraction
-      : undefined;
-  return {
-    label: `${side} - ${t.recordLensLine}:`,
-    power: `${power} D`,
-    // Kept at body size: the power is what should catch the eye, not the
-    // prediction that comes with it.
-    note: refraction === undefined ? undefined : ` (${t.pdfPredicted(refraction)})`,
-  };
+function present(raw: string | undefined): raw is string {
+  return raw !== undefined && raw.trim() !== "";
 }
 
-function recordBlocks(input: MedicalRecordInput): Block[] {
-  const t = STRINGS[input.lang];
-  const blocks: Block[] = [{ lines: [t.recordOpeningLine] }];
+interface EyeLines {
+  label: string;
+  lines: string[];
+}
 
-  const biometry: string[] = [];
+interface RecordModel {
+  opening: string;
+  retinaHeading: string;
+  /** Fundus findings, as typed by the clinician — never assumed. */
+  retina: { label: string; text: string }[];
+  biometryHeading: string;
+  biometry: EyeLines[];
+  topographyHeading: string;
+  topography: EyeLines[];
+  lensHeading: string;
+  lens: { label: string; power?: string }[];
+}
+
+function buildModel(input: MedicalRecordInput): RecordModel {
+  const t = STRINGS[input.lang];
+
+  const retina = (["OD", "OS"] as const)
+    .map((side) => ({ side, text: input.retina?.[side] }))
+    .filter((entry): entry is { side: "OD" | "OS"; text: string } => present(entry.text))
+    .map((entry) => ({
+      label: `${eyeLabel(input.lang, entry.side)}:`,
+      text: entry.text.trim(),
+    }));
+
+  const biometry: EyeLines[] = [];
+  const topography: EyeLines[] = [];
   for (const eye of input.eyes) {
     const m = eye.measurements;
-    const lines = [
+    const label = eyeLabel(input.lang, eye.side);
+
+    const biometryLines = [
       present(m.axialLength) ? `AXL: ${m.axialLength.trim()} mm` : null,
       present(m.acd) ? `ACD: ${m.acd.trim()} mm` : null,
       present(m.lensThickness) ? `LENS: ${m.lensThickness.trim()} mm` : null,
       present(m.wtw) ? `WTW: ${m.wtw.trim()} mm` : null,
     ].filter((line): line is string => line !== null);
-    if (lines.length > 0) biometry.push(eyeLabel(input.lang, eye.side), "", ...lines, "");
-  }
-  if (biometry.length > 0) {
-    blocks.push({ heading: t.recordBiometry, lines: biometry.slice(0, -1) });
-  }
+    if (biometryLines.length > 0) biometry.push({ label, lines: biometryLines });
 
-  const topography: string[] = [];
-  for (const eye of input.eyes) {
-    const m = eye.measurements;
-    const lines = [
+    const topographyLines = [
       present(m.k1) ? `K1: ${m.k1.trim()}` : null,
       present(m.k2) ? `K2: ${m.k2.trim()}` : null,
     ].filter((line): line is string => line !== null);
-    if (lines.length > 0) topography.push(`${eyeLabel(input.lang, eye.side)}:`, "", ...lines, "");
-  }
-  if (topography.length > 0) {
-    blocks.push({ heading: t.recordTopography, lines: topography.slice(0, -1) });
+    if (topographyLines.length > 0) topography.push({ label: `${label}:`, lines: topographyLines });
   }
 
   // Each power carries its eye: two bare numbers in a row would be ambiguous
-  // in a record that outlives the person who wrote it.
-  blocks.push({
-    heading: t.recordLensCalculation,
-    lines: input.eyes.map((eye) => {
-      const { label, power, note } = recommendation(input, eye);
-      return power === undefined ? label : `${label} ${power}${note ?? ""}`;
-    }),
-    emphasis: true,
+  // in a record that outlives whoever wrote it.
+  const lens = input.eyes.map((eye) => {
+    const best = closestToPlano(eye.rows);
+    const power = eye.recommended ?? (best >= 0 ? eye.rows[best].power : undefined);
+    const side = eyeLabel(input.lang, eye.side);
+    return power === undefined
+      ? { label: `${side} - ${t.pdfNoRecommendation}` }
+      : { label: `${side} - ${t.recordLensLine}:`, power: `${power} D` };
   });
 
-  const constants = [
-    input.lens.lensFactor ? t.pdfLensFactor(input.lens.lensFactor) : null,
-    input.lens.aConstant ? t.pdfAConstant(input.lens.aConstant) : null,
-  ].filter((part): part is string => part !== null);
-  blocks.push({
-    lines: [
-      `${t.pdfLens}: ${input.lens.name}${constants.length > 0 ? ` (${constants.join(", ")})` : ""}` +
-        (input.kIndex ? ` | ${t.pdfKIndex}: ${input.kIndex}` : ""),
-      t.pdfFooterFormula,
-    ],
-  });
-
-  return blocks;
+  return {
+    opening: t.recordOpeningLine,
+    retinaHeading: t.recordRetina,
+    retina,
+    biometryHeading: t.recordBiometry,
+    biometry,
+    topographyHeading: t.recordTopography,
+    topography,
+    lensHeading: t.recordLensCalculation,
+    lens,
+  };
 }
 
 /** Plain lines, for a box that takes no formatting at all. */
 export function recordToText(input: MedicalRecordInput): string {
-  return recordBlocks(input)
-    .map((block) =>
-      [block.heading, block.heading ? "" : null, ...block.lines]
-        .filter((line): line is string => line !== null)
-        .join("\n"),
-    )
-    .join("\n\n");
+  const m = buildModel(input);
+  const blocks: string[] = [m.opening];
+
+  if (m.retina.length > 0) {
+    blocks.push(
+      [m.retinaHeading, "", ...m.retina.map((entry) => `${entry.label} ${entry.text}`)].join("\n"),
+    );
+  }
+  for (const [heading, eyes] of [
+    [m.biometryHeading, m.biometry],
+    [m.topographyHeading, m.topography],
+  ] as const) {
+    if (eyes.length === 0) continue;
+    blocks.push(
+      [heading, "", ...eyes.flatMap((eye) => [eye.label, "", ...eye.lines, ""])].slice(0, -1).join("\n"),
+    );
+  }
+  blocks.push(
+    [
+      m.lensHeading,
+      "",
+      ...m.lens.map((entry) => (entry.power ? `${entry.label} ${entry.power}` : entry.label)),
+    ].join("\n"),
+  );
+
+  return blocks.join("\n\n");
 }
 
 function escapeHtml(value: string): string {
@@ -140,44 +141,57 @@ function sized(text: string, px: number): string {
 }
 
 /**
- * The markup itself. No classes, no tables, no colours — only what the
- * editor's own source view already contains, so a paste can't be reduced to
- * anything it doesn't already accept.
+ * The markup itself. No classes, tables or colours — only what the editor's
+ * own source view already contains, so nothing in a paste can be reduced to
+ * something it doesn't already accept.
  */
 export function recordToHtml(input: MedicalRecordInput): string {
-  const parts: string[] = [];
+  const m = buildModel(input);
+  const parts: string[] = [`<p>${sized(m.opening, BODY_PX)}</p>`, SPACER];
 
-  for (const block of recordBlocks(input)) {
-    if (parts.length > 0) parts.push(SPACER);
-    if (block.heading) {
-      parts.push(`<p><strong>${sized(block.heading, BODY_PX)}</strong></p>`, SPACER);
+  if (m.retina.length > 0) {
+    // The clinic writes this heading plain and the eye label bold, inline
+    // with its findings — unlike the measurement sections below.
+    parts.push(`<p>${escapeHtml(m.retinaHeading)}</p>`, SPACER);
+    for (const entry of m.retina) {
+      parts.push(
+        `<p><strong>${escapeHtml(entry.label)}&nbsp;</strong>${escapeHtml(entry.text)}</p>`,
+        SPACER,
+      );
     }
+    parts.push(SPACER);
+  }
 
-    if (block.emphasis) {
-      // Label at body size, the power itself enlarged — the one number a
-      // reader should find without looking for it.
-      for (const eye of input.eyes) {
-        const { label, power, note } = recommendation(input, eye);
-        parts.push(
-          power === undefined
-            ? `<p><strong>${sized(label, BODY_PX)}</strong></p>`
-            : `<p><strong>${sized(`${label} `, BODY_PX)}${sized(power, POWER_PX)}` +
-              `${note ? sized(note, BODY_PX) : ""}</strong></p>`,
-        );
-      }
-      continue;
-    }
-
-    for (const line of block.lines) {
-      parts.push(line === "" ? SPACER : `<p>${sized(line, BODY_PX)}</p>`);
+  for (const [heading, eyes] of [
+    [m.biometryHeading, m.biometry],
+    [m.topographyHeading, m.topography],
+  ] as const) {
+    if (eyes.length === 0) continue;
+    parts.push(`<p><strong>${sized(heading, BODY_PX)}</strong></p>`, SPACER);
+    for (const eye of eyes) {
+      parts.push(`<p>${sized(eye.label, BODY_PX)}</p>`, SPACER);
+      for (const line of eye.lines) parts.push(`<p>${sized(line, BODY_PX)}</p>`);
+      parts.push(SPACER);
     }
   }
+
+  parts.push(`<p><strong>${sized(m.lensHeading, BODY_PX)}</strong></p>`, SPACER);
+  for (const entry of m.lens) {
+    // The power is the one number a reader should find without searching.
+    parts.push(
+      entry.power === undefined
+        ? `<p><strong>${sized(entry.label, BODY_PX)}</strong></p>`
+        : `<p><strong>${sized(`${entry.label} `, BODY_PX)}${sized(entry.power, POWER_PX)}` +
+          `<span style="font-size:${BODY_PX}px;">&nbsp;</span></strong></p>`,
+    );
+  }
+  parts.push(SPACER);
 
   return parts.join("\n");
 }
 
 export function recordsToSource(records: MedicalRecordInput[]): string {
-  return records.map(recordToHtml).join(`\n${SPACER}\n${SPACER}\n`);
+  return records.map(recordToHtml).join(`\n${SPACER}\n`);
 }
 
 async function writeClipboard(text: string, html?: string): Promise<void> {
@@ -201,7 +215,7 @@ async function writeClipboard(text: string, html?: string): Promise<void> {
 export async function copyRecords(records: MedicalRecordInput[]): Promise<void> {
   await writeClipboard(
     records.map(recordToText).join("\n\n\n"),
-    records.map(recordToHtml).join(`\n${SPACER}\n${SPACER}\n`),
+    records.map(recordToHtml).join(`\n${SPACER}\n`),
   );
 }
 

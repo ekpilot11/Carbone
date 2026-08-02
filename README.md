@@ -179,10 +179,19 @@ notes are written (transcribed from the source of a record they had
 formatted by hand):
 
 ```
-BIOMETRIA:        OD / OE, then AXL and ACD, one per line
-TOPOGRAFIA:       OD: / OE:, then K1 and K2
-CALCULO DA LENTE: one line per eye, the power set larger
+MAPEAMENTO RETINA: the fundus findings you typed, per eye
+BIOMETRIA:         OD / OE, then AXL and ACD, one per line
+TOPOGRAFIA:        OD: / OE:, then K1 and K2
+CALCULO DA LENTE:  one line per eye, the power set larger
 ```
+
+The generated markup is byte-for-byte the clinic's own, checked against the
+source code of a record they formatted by hand.
+
+**The retina block is the one thing here the app cannot know.** It never
+examines a fundus, so the field is pre-filled with the practice's
+normal-exam wording and left editable per patient — correct it, or clear it
+and the section is omitted. Nothing asserts a finding on its own.
 
 Two buttons, because hospital editors filter pastes differently:
 
@@ -195,10 +204,10 @@ Two buttons, because hospital editors filter pastes differently:
   is shown on screen under "Show the source code" for selecting by hand if
   the clipboard is blocked.
 
-Both are built in the browser; nothing is uploaded. The record names the
-eye on every power (`OD - LIO recomendada: 23.5 D`), and ends with the lens,
-constants and K index that produced them. In the batch view each row has
-both buttons, and the header pair copies the whole day at once.
+Both are built in the browser; nothing is uploaded. The record names the eye
+on every power (`OD - LIO recomendada: 23.5 D`) and ends there. In the batch
+view each row has both buttons and its own retina field, and the header pair
+copies the whole day at once.
 
 ## Status: verified working (2026-08-01)
 

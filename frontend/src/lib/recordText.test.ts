@@ -9,6 +9,7 @@ const RECORD: MedicalRecordInput = {
   lang: "pt",
   kIndex: "1.3375",
   lens: { name: "Personal Constant", lensFactor: "1.57", aConstant: "118.4" },
+  retina: { OD: "MEIOS TRANSPARENTES ; RETINA APLICADA 360.", OS: "" },
   eyes: [
     {
       side: "OD",
@@ -54,9 +55,21 @@ describe("record as pasteable text", () => {
     expect(recordToText({ ...both, lang: "en" })).toContain("OS");
   });
 
-  it("names the eye on every recommended power", () => {
+  it("names the eye on every recommended power, and nothing else on that line", () => {
     const text = recordToText(RECORD);
-    expect(text).toContain("OD - LIO recomendada: 23.00 D (refração prevista -0.10 D)");
+    expect(text).toContain("OD - LIO recomendada: 23.00 D");
+    expect(text).not.toContain("refração prevista");
+  });
+
+  it("carries the fundus findings that were typed, and drops the eye left blank", () => {
+    const text = recordToText(RECORD);
+    expect(text).toContain("MAPEAMENTO RETINA:");
+    expect(text).toContain("OD: MEIOS TRANSPARENTES ; RETINA APLICADA 360.");
+    expect(text).not.toContain("OE:  ");
+  });
+
+  it("leaves the retina section out entirely when nothing was written", () => {
+    expect(recordToText({ ...RECORD, retina: undefined })).not.toContain("MAPEAMENTO RETINA");
   });
 
   it("omits values that were never measured rather than printing blanks", () => {
@@ -65,10 +78,11 @@ describe("record as pasteable text", () => {
     expect(text).not.toContain("LENS:");
   });
 
-  it("records which lens and index produced the powers", () => {
+  it("ends at the lens calculation — no trailing provenance block", () => {
     const text = recordToText(RECORD);
-    expect(text).toContain("Lente: Personal Constant (Lens Factor 1.57, Constante A 118.4)");
-    expect(text).toContain("Índice K: 1.3375");
+    expect(text).not.toContain("Lens Factor");
+    expect(text).not.toContain("Índice K");
+    expect(text.trimEnd().endsWith("D")).toBe(true);
   });
 });
 
@@ -80,8 +94,9 @@ describe("record as source code", () => {
     expect(html).toContain("<p>&nbsp;</p>");
     // The power itself is the one thing set larger.
     expect(html).toContain('<span style="font-size:20px;">23.00 D</span>');
-    // The prediction stays at body size beside it.
-    expect(html).toContain('<span style="font-size:16px;"> (refração prevista -0.10 D)</span>');
+    // The retina heading is plain and its eye label bold, as the clinic writes it.
+    expect(html).toContain("<p>MAPEAMENTO RETINA:</p>");
+    expect(html).toContain("<p><strong>OD:&nbsp;</strong>MEIOS TRANSPARENTES ; RETINA APLICADA 360.</p>");
     expect(html).not.toMatch(/class=|<table|<div/);
   });
 

@@ -118,6 +118,13 @@ function App() {
   const [patientName, setPatientName] = useState("");
   // A day's photos, one patient each. Set by picking several files at once.
   const [batchFiles, setBatchFiles] = useState<File[] | null>(null);
+  // Fundus findings for the record's retina block. Pre-filled with the
+  // practice's normal-exam wording, but it is the clinician's assertion —
+  // nothing here examined a retina.
+  const [retina, setRetina] = useState<Record<EyeSide, string>>({
+    OD: STRINGS[initialLanguage()].recordRetinaDefault,
+    OS: STRINGS[initialLanguage()].recordRetinaDefault,
+  });
 
   const eyeTitles = useMemo<Record<EyeSide, string>>(
     () => ({ OD: t.eyeOd, OS: t.eyeOs }),
@@ -403,6 +410,7 @@ function App() {
       patientName,
       recordedAt: new Date(),
       lang,
+      retina,
       kIndex: result.kIndex ?? submitted.kIndex,
       lens: {
         name: result.lens?.name ?? submitted.settings.lens,
@@ -697,6 +705,21 @@ function App() {
                 autoComplete="off"
               />
             </label>
+            <div className="retina-fields">
+              <span className="retina-title">{t.recordRetinaLabel}</span>
+              {(["OD", "OS"] as const).map((side) => (
+                <label className="field" key={side}>
+                  <span>{side === "OD" ? "OD" : lang === "pt" ? "OE" : "OS"}</span>
+                  <input
+                    type="text"
+                    value={retina[side]}
+                    onChange={(e) => setRetina((prev) => ({ ...prev, [side]: e.target.value }))}
+                    autoComplete="off"
+                  />
+                </label>
+              ))}
+              <p className="hint">{t.recordRetinaHint}</p>
+            </div>
             <div className="record-buttons">
               <button type="button" onClick={() => handleCopyRecord(false)}>
                 {recordCopied === "rich" ? t.recordCopied : t.recordCopy}

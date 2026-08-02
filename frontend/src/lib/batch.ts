@@ -33,6 +33,8 @@ export interface BatchItem {
   /** Read from the photo when legible; editable either way. */
   patientName: string;
   rows: Record<EyeSide, EyeRowState>;
+  /** Fundus findings per eye, typed by the clinician for the record. */
+  retina?: Partial<Record<EyeSide, string>>;
   /** What the scan wants the clinician to know (missing eye, low-confidence read). */
   note?: string;
   /** Why this photo couldn't be scanned or calculated. */
@@ -47,7 +49,7 @@ export interface BatchItem {
   };
 }
 
-export function createBatchItems(files: File[]): BatchItem[] {
+export function createBatchItems(files: File[], retinaDefault = ""): BatchItem[] {
   return files.map((file, index) => ({
     id: `${index}-${file.name}-${file.lastModified}`,
     fileName: file.name,
@@ -56,6 +58,9 @@ export function createBatchItems(files: File[]): BatchItem[] {
     status: "scanning",
     patientName: "",
     rows: { OD: emptyRow("OD"), OS: emptyRow("OS") },
+    // The practice's normal-exam wording, there to be corrected — this app
+    // never examines a retina.
+    retina: { OD: retinaDefault, OS: retinaDefault },
   }));
 }
 

@@ -36,6 +36,12 @@ export interface MedicalRecordInput {
   /** The keratometric index the calculation ran with; it changes every power. */
   kIndex?: string;
   eyes: MedicalRecordEye[];
+  /**
+   * Fundus findings per eye, for the record's MAPEAMENTO RETINA block.
+   * Typed by the clinician — this app never examines a retina, so it never
+   * fills these in on its own.
+   */
+  retina?: Partial<Record<EyeSide, string>>;
   /** The record follows the language the app is being used in. */
   lang: Lang;
 }
