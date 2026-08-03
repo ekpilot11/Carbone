@@ -3,6 +3,11 @@ dist
 *.log
 .DS_Store
 
+# The API key lives here (docker-compose reads it automatically). It must
+# never be committed — and keeping it in a file also stops it appearing in
+# terminal history or over someone's shoulder.
+.env
+
 # Chromium's profile — holds the calculator's cookies (including a Cloudflare
 # clearance a human earned), which are machine- and IP-specific.
 backend/browser-profile/
