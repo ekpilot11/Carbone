@@ -46,8 +46,8 @@ RUN cd backend && npx playwright install --with-deps chromium \
 
 COPY --from=backend /app/backend/dist ./backend/dist
 COPY --from=frontend /app/frontend/dist ./frontend/dist
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+COPY start-lens.sh /usr/local/bin/start-lens.sh
+RUN chmod +x /usr/local/bin/start-lens.sh
 
 ENV FRONTEND_DIST=/app/frontend/dist
 # Mount a volume here: this is where a Cloudflare clearance a human earned
@@ -56,4 +56,4 @@ ENV BARRETT_PROFILE_DIR=/app/browser-profile
 ENV PORT=4000
 EXPOSE 4000
 
-CMD ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["/usr/local/bin/start-lens.sh"]

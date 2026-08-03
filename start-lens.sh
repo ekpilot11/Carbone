@@ -1,6 +1,10 @@
 #!/bin/sh
 # Starts a virtual display, then the server.
 #
+# Named for this app rather than docker-entrypoint.sh: the Node base image
+# ships its own script under that name, and quietly overwriting it works
+# only by accident.
+#
 # The display exists for one reason: when Cloudflare challenges, the
 # automation opens a *visible* browser window for a person to click in (the
 # app shows it to them — see /api/challenge), and a visible browser needs
