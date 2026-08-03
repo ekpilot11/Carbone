@@ -147,7 +147,35 @@ npm run build && npm start   # compiled
 Environment: `PORT` (default `4000`), `BARRETT_PROFILE_DIR` (default
 `./browser-profile` — see "Keeping the Cloudflare clearance"),
 `BARRETT_HEADLESS=1` to forbid the visible challenge window, `BARRETT_URL`
-for the offline mock, `ANTHROPIC_API_KEY` for photo scanning.
+for the offline mock, `ANTHROPIC_API_KEY` for photo scanning,
+`FRONTEND_DIST` and `ALLOWED_ORIGINS` for deployment (below).
+
+### Serving the app from here
+
+When `FRONTEND_DIST` points at a built frontend — it defaults to
+`../frontend/dist`, and the Dockerfile sets it — this server hands out the
+app as well as the API. That is how the deployment is meant to run: one
+port, one URL for the phone and the hospital PC, and no CORS at all, since
+everything is same-origin. Requests that aren't `/api/*` and aren't files
+fall through to `index.html`.
+
+CORS is wide open by default because of that. Set `ALLOWED_ORIGINS` (a
+comma-separated list) if you host the frontend somewhere else, so this API
+isn't callable from any page on the internet. Neither setting is
+authentication — see the deployment caveats in the root README.
+
+The offline mock also plays Cloudflare, so the whole path above can be
+exercised without troubling the real site:
+
+```bash
+npm run mock
+BARRETT_URL='http://127.0.0.1:4100/?challenge=1' npm run dev
+```
+
+The first run is challenged, `GET /api/challenge` offers the window, a click
+posted to `/input` clears it, and the run finishes. The run after that isn't
+challenged at all — nor is the first run after a restart, which is the whole
+point of the persistent profile.
 
 ## Endpoints
 
@@ -240,6 +268,37 @@ to forbid the visible fallback; challenged runs then fail with a clear
 error. If truly unattended automation is ever needed, ask APACRS about
 sanctioned programmatic access rather than working around their
 protection.
+
+### Completing the check from somewhere else
+
+The visible window works when the clinician is sitting at the machine that
+runs this server. Hosted, they aren't — and the clearance is only valid from
+the IP that loaded the site, so it can't be solved on their phone and posted
+over either. Three routes carry the window to them instead:
+
+| Route | What it does |
+| --- | --- |
+| `GET /api/challenge` | `{challenge: {id, ageSeconds, width, height}}` while a visible window is open, `{challenge: null}` otherwise. |
+| `GET /api/challenge/:id/frame.jpg` | A JPEG of what that window shows right now. |
+| `POST /api/challenge/:id/input` | `{x, y}` clicks at those coordinates in the window; `{text}` types. |
+
+The frontend polls the first while a calculation is running, shows the
+frames, and translates clicks on the picture back into the window's own
+coordinates (the viewport is pinned to 1280×900 so the two agree).
+
+A person still looks at the challenge and still clicks it. Nothing here
+answers one, and the routes only do anything while a challenge window is
+actually open. **They are unauthenticated, like the rest of this API** — put
+the server behind your own access control before exposing it.
+
+On a server there is no display for a visible browser to open on, so the
+process runs under Xvfb (the Dockerfile's `CMD` does this); without one, a
+challenged run fails instead of offering a window.
+
+Only one visible attempt runs at a time: two challenged runs would otherwise
+fight over the browser profile, and a person can only solve one check at
+once. The second waits, and if the first one's click cleared the site, it
+retries invisibly rather than asking for a second click.
 
 ### Keeping the Cloudflare clearance
 

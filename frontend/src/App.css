@@ -652,3 +652,56 @@ button.secondary,
   background: #f4f6f8;
   color: #1a1f27;
 }
+
+/* The Cloudflare check, shown live from the machine running the automation.
+   It sits over everything because it is the only thing to do while it's up:
+   the calculation is paused until a person ticks the box. */
+.challenge-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(16, 21, 28, 0.72);
+  overflow: auto;
+}
+
+.challenge-box {
+  background: #fff;
+  color: #1a1f27;
+  border-radius: 10px;
+  padding: 1.25rem;
+  max-width: min(1100px, 100%);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.challenge-box h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1.1rem;
+}
+
+/* Scaled to fit, never cropped: a click is translated back into the real
+   window's coordinates, so what you see has to be the whole window. */
+.challenge-frame {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 62vh;
+  object-fit: contain;
+  border: 1px solid #ccd3db;
+  border-radius: 6px;
+  cursor: pointer;
+  background: #f4f6f8;
+}
+
+.challenge-typing {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.challenge-typing input {
+  flex: 1;
+}

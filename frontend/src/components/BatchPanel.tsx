@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ChallengeOverlay } from "./ChallengeOverlay";
 import {
   calculateBarrett,
   scanPhoto,
@@ -294,6 +295,7 @@ export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchP
         </button>
       </div>
       {calculating && <p className="hint">{t.batchCalculatingHint}</p>}
+      <ChallengeOverlay t={t} active={calculating} />
 
       <ol className="batch-list">
         {items.map((item, index) => (

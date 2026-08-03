@@ -34,6 +34,40 @@ function sticky(page: string): string {
   );
 }
 
+/**
+ * Request the page as `/?challenge=1` and it plays Cloudflare: a "Just a
+ * moment..." interstitial with a box to tick, and the calculator only after
+ * someone has ticked it. Ticking sets a clearance cookie, so a browser that
+ * keeps its profile is never asked twice — which is the whole point of the
+ * persistent profile, and the only way to exercise the remote challenge
+ * view without troubling the real site.
+ *
+ * The wording matches what the automation looks for in isChallengePage.
+ */
+const CLEARANCE_COOKIE = "mock_clearance";
+
+const CHALLENGE_PAGE = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Just a moment...</title></head>
+<body style="font-family:sans-serif;text-align:center;padding-top:120px">
+  <h2>Checking your browser before accessing calc.apacrs.org</h2>
+  <p>Performing security verification. Please tick the box to continue.</p>
+  <!-- Deliberately at a fixed position: the remote challenge view is checked
+       by clicking a known point in the picture, which only works if the box
+       is where the test says it is. Roughly centred in a 1280x900 window. -->
+  <label id="verify-box" style="position:absolute;left:520px;top:400px;width:240px;height:60px;
+         border:1px solid #999;border-radius:6px;display:flex;align-items:center;
+         justify-content:center;gap:8px;font-size:18px;cursor:pointer">
+    <input type="checkbox" id="verify" style="width:24px;height:24px" onchange="cleared()">
+    Verify you are human
+  </label>
+<script>
+function cleared() {
+  document.cookie = '${CLEARANCE_COOKIE}=1; path=/; max-age=3600';
+  setTimeout(function () { location.reload(); }, 200);
+}
+</script>
+</body></html>`;
+
 const PAGE = `<!doctype html>
 <html><head><meta charset="utf-8"><title>Barrett Universal II Formula (mock)</title></head>
 <body>
@@ -134,8 +168,14 @@ function calculate() {
 
 const port = Number(process.env.MOCK_PORT ?? 4100);
 createServer((req, res) => {
+  const url = req.url ?? "";
+  const cleared = (req.headers.cookie ?? "").includes(`${CLEARANCE_COOKIE}=1`);
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  res.end(/[?&]sticky=1/.test(req.url ?? "") ? sticky(PAGE) : PAGE);
+  if (/[?&]challenge=1/.test(url) && !cleared) {
+    res.end(CHALLENGE_PAGE);
+    return;
+  }
+  res.end(/[?&]sticky=1/.test(url) ? sticky(PAGE) : PAGE);
 }).listen(port, "127.0.0.1", () => {
   console.log(`Mock calculator on http://127.0.0.1:${port}/ (calc delay ${CALC_DELAY_MS}ms)`);
 });

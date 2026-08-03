@@ -91,6 +91,43 @@ export async function fetchLensOptions(): Promise<string[]> {
   return body.lenses as string[];
 }
 
+/**
+ * A Cloudflare check waiting for a human, on the machine running the
+ * automation. When the app is on a server, that machine is not the one in
+ * front of you — so the check comes here instead: a picture of the real
+ * browser window, and your clicks sent back to it. Nothing is answered
+ * automatically; this only carries a person's hand to where the window is.
+ */
+export interface ChallengeStatus {
+  id: string;
+  ageSeconds: number;
+  width: number;
+  height: number;
+}
+
+export async function fetchChallenge(): Promise<ChallengeStatus | null> {
+  const res = await fetch(`${API_BASE}/api/challenge`);
+  if (!res.ok) return null;
+  const body = (await res.json()) as { challenge?: ChallengeStatus | null };
+  return body.challenge ?? null;
+}
+
+/** `nonce` defeats caching — the window changes as the person interacts with it. */
+export function challengeFrameUrl(id: string, nonce: number): string {
+  return `${API_BASE}/api/challenge/${id}/frame.jpg?n=${nonce}`;
+}
+
+export async function sendChallengeInput(
+  id: string,
+  input: { x: number; y: number } | { text: string },
+): Promise<void> {
+  await fetch(`${API_BASE}/api/challenge/${id}/input`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
 export async function calculateBarrett(payload: CalculateRequest): Promise<CalculateResponse> {
   const res = await fetch(`${API_BASE}/api/calculate`, {
     method: "POST",

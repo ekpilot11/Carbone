@@ -1,0 +1,21 @@
+services:
+  lens:
+    build: .
+    # Port 80 so the address is just the machine's hostname — easier to type
+    # on a phone, and easier to put a TLS proxy in front of later.
+    ports:
+      - "80:4000"
+    environment:
+      # Enables photo scanning. Leave unset and photos are read on-device
+      # instead (weaker, but nothing leaves the machine) — see the READMEs.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Set when the frontend is hosted somewhere other than this server.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+    volumes:
+      # The browser profile: keeps the Cloudflare clearance across restarts
+      # and redeploys. Nothing clinical is stored in it.
+      - browser-profile:/app/browser-profile
+    restart: unless-stopped
+
+volumes:
+  browser-profile:

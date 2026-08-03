@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 import { BatchPanel } from "./components/BatchPanel";
 import { CameraCapture } from "./components/CameraCapture";
+import { ChallengeOverlay } from "./components/ChallengeOverlay";
 import {
   calculateBarrett,
   fetchLensOptions,
@@ -618,6 +619,8 @@ function App() {
         {calculating && <p className="hint">{t.cloudflareHint}</p>}
       </section>
       )}
+
+      {!batchFiles && <ChallengeOverlay t={t} active={calculating} />}
 
       {!batchFiles && calcError && (
         <section className="error-box">

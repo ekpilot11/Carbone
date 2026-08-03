@@ -103,7 +103,14 @@ const en = {
     `No eye has all its values yet — ${fields} still missing. Fill them in to calculate.`,
   planEmpty: "Fill in every field for at least one eye to enable calculation.",
   cloudflareHint:
-    'Usually nothing else is needed. If the calculator site asks for a security check, a browser window opens on the computer running the backend — click "Verify you are human" there and the calculation continues automatically.',
+    'Usually nothing else is needed. If the calculator site asks for a security check, it appears here to be completed by hand — click "Verify you are human" and the calculation continues on its own.',
+  challengeTitle: "The calculator site is asking for a security check",
+  challengeHint:
+    'This is the real calculator page, shown live from wherever the automation is running. Tick "Verify you are human" below — the check only counts when a person does it, and the calculation continues by itself afterwards. Your patient values have not been sent anywhere yet.',
+  challengeTypePlaceholder: "Type here only if the check asks for text",
+  challengeSend: "Send",
+  challengeWaiting: (seconds: number) =>
+    `Waiting ${seconds}s — the run gives up after 3 minutes, and then you can simply calculate again.`,
   calcFailed: "Calculation failed.",
   calcErrorHint:
     'The automated calculator may be unreachable, or its form may have changed. Use "Copy values" and "Open calculator manually" above to enter them yourself.',
@@ -289,7 +296,14 @@ const pt: Strings = {
     `Nenhum olho tem todos os valores ainda — falta ${fields}. Preencha para calcular.`,
   planEmpty: "Preencha todos os campos de pelo menos um olho para liberar o cálculo.",
   cloudflareHint:
-    'Normalmente nada mais é preciso. Se o site da calculadora pedir verificação de segurança, uma janela do navegador abre no computador que roda o backend — clique em "Verify you are human" lá e o cálculo continua sozinho.',
+    'Normalmente nada mais é preciso. Se o site da calculadora pedir verificação de segurança, ela aparece aqui para ser feita à mão — clique em "Verify you are human" e o cálculo continua sozinho.',
+  challengeTitle: "O site da calculadora está pedindo uma verificação de segurança",
+  challengeHint:
+    'Esta é a página real da calculadora, mostrada ao vivo de onde a automação está rodando. Marque "Verify you are human" abaixo — a verificação só vale quando uma pessoa a faz, e depois o cálculo segue sozinho. Os valores do paciente ainda não foram enviados a lugar nenhum.',
+  challengeTypePlaceholder: "Digite aqui só se a verificação pedir texto",
+  challengeSend: "Enviar",
+  challengeWaiting: (seconds: number) =>
+    `Aguardando ${seconds}s — a tentativa desiste após 3 minutos, e aí é só calcular de novo.`,
   calcFailed: "O cálculo falhou.",
   calcErrorHint:
     'A calculadora automatizada pode estar inacessível ou o formulário dela pode ter mudado. Use "Copiar valores" e "Abrir a calculadora manualmente" acima para digitá-los você mesmo.',

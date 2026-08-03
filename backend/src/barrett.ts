@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium, type BrowserContext, type Frame, type Locator, type Page } from "playwright";
@@ -533,6 +534,13 @@ let sharedContext: BrowserContext | null = null;
 let activeSharedRuns = 0;
 
 /**
+ * Pinned rather than left to the window size: a challenge window is also
+ * screenshotted and clicked remotely (see ActiveChallenge), and that only
+ * lines up if the picture and the mouse agree on the coordinate space.
+ */
+const VIEWPORT = { width: 1280, height: 900 } as const;
+
+/**
  * Opens Chromium on the persistent profile, falling back to a throwaway
  * one if the directory can't be used (another server already holds it, or
  * the disk is read-only). A run that can't keep its cookies is worth far
@@ -540,7 +548,7 @@ let activeSharedRuns = 0;
  */
 async function launchContext(headless: boolean): Promise<BrowserContext> {
   try {
-    return await chromium.launchPersistentContext(PROFILE_DIR, { headless });
+    return await chromium.launchPersistentContext(PROFILE_DIR, { headless, viewport: VIEWPORT });
   } catch (err) {
     const reason = err instanceof Error ? err.message.split("\n")[0] : String(err);
     console.warn(
@@ -548,7 +556,7 @@ async function launchContext(headless: boolean): Promise<BrowserContext> {
         `Any Cloudflare verification will have to be completed again.`,
     );
     const browser = await chromium.launch({ headless });
-    return await browser.newContext();
+    return await browser.newContext({ viewport: VIEWPORT });
   }
 }
 
@@ -1005,18 +1013,119 @@ async function isChallengePage(page: Page): Promise<boolean> {
   return /performing security verification|verify you are not a bot|cloudflare/i.test(text);
 }
 
+/**
+ * The visible window, published so it can be reached from somewhere else.
+ *
+ * On a clinician's own machine the window simply appears and they click the
+ * checkbox in it. On a hosted server nobody is sitting in front of that
+ * window — and the clearance is bound to the server's IP, so it cannot be
+ * solved anywhere else. So while a visible attempt is running, its page is
+ * offered as frames the app can display and clicks it can forward: a person
+ * still solves the challenge with their own eyes and hand, from wherever
+ * they happen to be. Nothing is answered automatically.
+ *
+ * Only one visible attempt exists at a time (see `queueVisible`), so this
+ * is a single slot rather than a table.
+ */
+interface ActiveChallenge {
+  id: string;
+  page: Page;
+  startedAt: number;
+}
+
+let activeChallenge: ActiveChallenge | null = null;
+
+export interface ChallengeStatus {
+  id: string;
+  /** Seconds the window has been open, so the app can show it giving up. */
+  ageSeconds: number;
+  width: number;
+  height: number;
+}
+
+export function currentChallenge(): ChallengeStatus | null {
+  if (!activeChallenge) return null;
+  const size = activeChallenge.page.viewportSize() ?? { width: 1280, height: 720 };
+  return {
+    id: activeChallenge.id,
+    ageSeconds: Math.round((Date.now() - activeChallenge.startedAt) / 1000),
+    width: size.width,
+    height: size.height,
+  };
+}
+
+/** A JPEG of what the window currently shows, or null if it has closed. */
+export async function challengeFrame(id: string): Promise<Buffer | null> {
+  if (activeChallenge?.id !== id) return null;
+  return await activeChallenge.page
+    .screenshot({ type: "jpeg", quality: 65 })
+    .catch(() => null);
+}
+
+/** Forwards one real click, in the frame's own coordinates. */
+export async function challengeClick(id: string, x: number, y: number): Promise<boolean> {
+  if (activeChallenge?.id !== id) return false;
+  const size = activeChallenge.page.viewportSize() ?? { width: 1280, height: 720 };
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+  if (x < 0 || y < 0 || x > size.width || y > size.height) return false;
+  await activeChallenge.page.mouse.click(x, y).catch(() => {});
+  return true;
+}
+
+/** Forwards typed text, for the rare challenge that asks for more than a click. */
+export async function challengeType(id: string, text: string): Promise<boolean> {
+  if (activeChallenge?.id !== id) return false;
+  await activeChallenge.page.keyboard.type(text.slice(0, 200)).catch(() => {});
+  return true;
+}
+
+/**
+ * Serialises visible attempts. Two challenged runs (the batch view calculates
+ * two at a time) must not open two windows: only one process may hold the
+ * browser profile, and a person can only solve one challenge at a time.
+ */
+let visibleQueue: Promise<unknown> = Promise.resolve();
+
+/** When a visible attempt last got through, i.e. when a person last solved one. */
+let lastClearedAt = 0;
+
+function queueVisible<T>(work: () => Promise<T>): Promise<T> {
+  const run = visibleQueue.then(work, work);
+  visibleQueue = run.catch(() => {});
+  return run;
+}
+
 export async function runBarrettCalculation(request: CalculateRequest): Promise<CalculateResponse> {
+  const challengedAt = Date.now();
   try {
     return await attemptCalculation(request, true);
   } catch (err) {
-    if (err instanceof CloudflareChallengedError && !HEADLESS_ONLY) {
+    if (!(err instanceof CloudflareChallengedError) || HEADLESS_ONLY) throw err;
+
+    return await queueVisible(async () => {
+      // If someone solved a challenge while this run waited its turn, that
+      // clearance is in the shared profile now — try invisibly once more
+      // rather than asking a second person for a second click. Only then:
+      // when nothing has changed, retrying blind just adds a wait before
+      // showing the check that has to be completed anyway.
+      if (lastClearedAt > challengedAt) {
+        try {
+          return await attemptCalculation(request, true);
+        } catch (retry) {
+          if (!(retry instanceof CloudflareChallengedError)) throw retry;
+        }
+      }
       console.log(
         "Cloudflare challenged the invisible browser — retrying in a visible window. " +
-          "Click the verification checkbox when it appears.",
+          "Click the verification checkbox when it appears (in the window itself, or in the " +
+          "app, which shows it while it is open).",
       );
-      return await attemptCalculation(request, false);
-    }
-    throw err;
+      const result = await attemptCalculation(request, false);
+      // Got through, so a person completed the check: the runs queued behind
+      // this one can try invisibly on the clearance it earned.
+      lastClearedAt = Date.now();
+      return result;
+    });
   }
 }
 
@@ -1035,6 +1144,13 @@ async function attemptCalculation(
     const page = await context.newPage();
     openPage = page;
 
+    // A visible attempt only happens because a challenge is expected, so the
+    // window goes on offer for the whole attempt — the app can show it and
+    // forward the clicks of whoever is using it.
+    if (!headless) {
+      activeChallenge = { id: randomUUID(), page, startedAt: Date.now() };
+    }
+
     // Old ASP.NET validators often report problems via alert() popups that
     // never appear in the DOM — capture them so failures can name the reason.
     const dialogMessages: string[] = [];
@@ -1045,7 +1161,15 @@ async function attemptCalculation(
 
     await page.goto(CALCULATOR_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
 
-    let formRoot = await findFormRoot(page, 15000);
+    // Two-stage wait rather than one 15-second one: a challenged page is
+    // recognised in about 8, and every second past that is a second the
+    // clinician spends staring at "Calculating…" before the check they have
+    // to complete is even shown to them. A merely slow site still gets the
+    // full 15 seconds.
+    let formRoot = await findFormRoot(page, 8000);
+    if (!formRoot && !(await isChallengePage(page))) {
+      formRoot = await findFormRoot(page, 7000);
+    }
     if (!formRoot && (await isChallengePage(page))) {
       if (headless) {
         throw new CloudflareChallengedError();
@@ -1196,6 +1320,7 @@ async function attemptCalculation(
       warning,
     };
   } finally {
+    if (activeChallenge?.page === openPage) activeChallenge = null;
     await openPage?.close().catch(() => {});
     if (shared) activeSharedRuns--;
     // The visible window is closed too — its whole job was to earn the

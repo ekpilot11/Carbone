@@ -282,8 +282,81 @@ Any HTTPS tunnel tool — Cloudflare Tunnel, etc. — works the same way.)
 Open the `https://....ngrok-free.app` URL it prints on your phone. The link
 stops working once you kill the `ngrok` process or the `npm run dev`
 servers — it's meant for trying the app out, not for daily clinical use.
-For that, deploy the frontend and backend properly (e.g. Vercel + Render)
-so you get a stable HTTPS URL — ask if you'd like help setting that up.
+For that, see below.
+
+## Deploying it (one server, one address)
+
+The photos are taken on a phone and the records are typed into a hospital
+PC, and those two machines can't talk to each other. What they do share is
+the internet, so the app goes on a server both of them can open.
+
+It ships as **one container**: the server serves the built app as well as
+the API, so there is one port, one URL and no CORS to configure.
+
+```bash
+docker compose up -d --build        # serves on port 80
+# or, without compose:
+docker build -t lens . && docker run -d -p 80:4000 \
+  -v lens-profile:/app/browser-profile \
+  -e ANTHROPIC_API_KEY=sk-ant-... lens
+```
+
+The `browser-profile` volume is the one thing worth keeping across
+redeploys: it holds the Cloudflare clearance (see below). Losing it costs
+one more verification, nothing else.
+
+### Where to put it
+
+Any machine with ~2 GB of RAM and a public address will do — it runs
+Chromium. A **genuinely always-free VM** (Oracle Cloud's Ampere tier,
+Google Cloud's e2-micro) suits this better than a free tier that sleeps: a
+container that gets suspended between uses loses its warm browser *and* its
+clearance, so every session starts with a verification. Free-tier terms move
+around, so check the current limits before committing to one.
+
+Put HTTPS in front of it before real use — the camera capture needs it, and
+so does anything carrying patient data. A reverse proxy with a free
+certificate (Caddy, or Cloudflare Tunnel, which also avoids opening a port)
+is the short path.
+
+### Two honest caveats
+
+- **A datacentre IP gets challenged more.** Cloudflare treats a cloud
+  server with more suspicion than a clinic's own connection, so expect the
+  security check more often than you saw it running locally. It is
+  completable **from inside the app** — see below — so this costs clicks,
+  not failures. If it becomes tiresome, running the server on a machine at
+  the practice (with a tunnel for the public address) makes it much rarer.
+- **This API has no login.** Anyone who can reach the address can use it.
+  Keep it behind something — your own authentication, a VPN, Cloudflare
+  Access, or at minimum an unguessable hostname you don't publish — before
+  it touches real patients, and take your institution's view on records
+  passing through a server you rent.
+
+### The security check, wherever you are
+
+When calc.apacrs.org asks a browser to prove there's a person behind it,
+the automation opens a **real, visible** browser window and waits. On a
+server nobody is looking at that window — and the check only counts if it
+is passed from the machine that is loading the site, so it can't be solved
+anywhere else either.
+
+So the window is brought to you: while it's open, the app shows a live
+picture of it and sends your clicks back to it. You tick "Verify you are
+human" on your phone or the hospital PC, and the calculation carries on by
+itself. Nothing is answered automatically — this project does not evade bot
+protection, it just moves a person's hand to where the window is.
+
+The clearance that earns is kept in the browser profile, so it isn't asked
+for again on every run (`backend/README.md` has the details and the limits).
+
+### Still missing for the phone → PC handoff
+
+Uploading on the phone does **not** yet make those patients appear on the
+hospital PC: the batch lives in the browser tab it was uploaded in. Hosting
+is the prerequisite for fixing that; the work itself — a session the server
+keeps, reopenable from another device, and a login once more than one
+person uses it — hasn't been done.
 
 ## Testing
 
