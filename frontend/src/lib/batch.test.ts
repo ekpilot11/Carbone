@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   countBatch,
   fromPortableBatch,
+  hasWorkToHandOff,
   isItemCalculable,
   isPortableBatch,
   isStale,
   itemSides,
   partialSides,
   runWithConcurrency,
+  singlePatientItem,
   toPortableBatch,
   type BatchItem,
 } from "./batch";
@@ -193,5 +195,40 @@ describe("carrying a day's work to another device", () => {
     expect(isPortableBatch(null)).toBe(false);
     expect(isPortableBatch({ items: [] })).toBe(false);
     expect(isPortableBatch({ version: 2, items: [], settings, kIndex: "1.3375" })).toBe(false);
+  });
+});
+
+describe("handing over a single patient", () => {
+  const settings = { lens: "Personal Constant", lensFactor: "1.57", aConstant: "118.4" };
+
+  it("travels as a batch of one, keeping name, values and result", () => {
+    const one = singlePatientItem({
+      patientName: "Ana Souza",
+      rows: { OD: { ...emptyRow("OD"), ...COMPLETE }, OS: emptyRow("OS") },
+      result: { resultsText: "…", recommended: { od: "21.50" } },
+    });
+    const restored = fromPortableBatch(toPortableBatch([one], settings, "1.3375"));
+    expect(restored).toHaveLength(1);
+    expect(restored[0].patientName).toBe("Ana Souza");
+    expect(restored[0].rows.OD.k1).toBe("44.16");
+    expect(restored[0].result?.recommended?.od).toBe("21.50");
+    // A calculated patient arrives calculated, so the record is ready to copy.
+    expect(restored[0].status).toBe("done");
+  });
+
+  it("arrives as a row to fill in when nothing was calculated yet", () => {
+    const one = singlePatientItem({
+      patientName: "",
+      rows: { OD: { ...emptyRow("OD"), ...COMPLETE }, OS: emptyRow("OS") },
+    });
+    expect(one.status).toBe("ready");
+    expect(one.fileName).toBe("patient");
+  });
+
+  it("has nothing to hand over until a value is entered", () => {
+    expect(hasWorkToHandOff({ OD: emptyRow("OD"), OS: emptyRow("OS") })).toBe(false);
+    expect(
+      hasWorkToHandOff({ OD: { ...emptyRow("OD"), k1: "44.16" }, OS: emptyRow("OS") }),
+    ).toBe(true);
   });
 });

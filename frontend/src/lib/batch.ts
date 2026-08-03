@@ -128,6 +128,38 @@ export function isPortableBatch(value: unknown): value is PortableBatch {
   );
 }
 
+/**
+ * The single-patient form, shaped as a batch of one.
+ *
+ * One patient is the commonest handoff of all — photograph an exam on the
+ * phone, type the record on the hospital PC — so it travels by the same
+ * mechanism rather than a second one. It arrives on the other device as a
+ * one-row batch, with the same buttons.
+ */
+export function singlePatientItem(input: {
+  patientName: string;
+  rows: Record<EyeSide, EyeRowState>;
+  result?: CalculateResponse;
+  submitted?: BatchItem["submitted"];
+}): BatchItem {
+  return {
+    id: "single",
+    fileName: input.patientName.trim() || "patient",
+    file: null,
+    previewUrl: null,
+    status: input.result ? "done" : "ready",
+    patientName: input.patientName,
+    rows: input.rows,
+    result: input.result,
+    submitted: input.submitted,
+  };
+}
+
+/** True when there is something worth carrying to the other device. */
+export function hasWorkToHandOff(rows: Record<EyeSide, EyeRowState>): boolean {
+  return !isRowEmpty(rows.OD) || !isRowEmpty(rows.OS);
+}
+
 export function createBatchItems(files: File[]): BatchItem[] {
   return files.map((file, index) => ({
     id: `${index}-${file.name}-${file.lastModified}`,

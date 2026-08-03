@@ -7,12 +7,20 @@ import {
   calculateBarrett,
   collectHandoff,
   fetchLensOptions,
+  parkHandoff,
   scanPhoto,
   ScanUnavailableError,
   type CalculateResponse,
   type IolTableRow,
 } from "./lib/api";
-import { fromPortableBatch, isPortableBatch, type BatchItem } from "./lib/batch";
+import {
+  fromPortableBatch,
+  hasWorkToHandOff,
+  isPortableBatch,
+  singlePatientItem,
+  toPortableBatch,
+  type BatchItem,
+} from "./lib/batch";
 import { prepareImage } from "./lib/imagePrep";
 import {
   applyBiometry,
@@ -128,6 +136,7 @@ function App() {
   const [restoredBatch, setRestoredBatch] = useState<BatchItem[] | null>(null);
   const [restoredSettings, setRestoredSettings] = useState<LensSettings | null>(null);
   const [restoredKIndex, setRestoredKIndex] = useState<string | null>(null);
+  const [sentHandoff, setSentHandoff] = useState<{ code: string; expiresAt: number } | null>(null);
 
   const eyeTitles = useMemo<Record<EyeSide, string>>(
     () => ({ OD: t.eyeOd, OS: t.eyeOs }),
@@ -336,10 +345,15 @@ function App() {
 
   function updateField(side: EyeSide, field: keyof EyeRowState, value: string) {
     setRows((prev) => ({ ...prev, [side]: { ...prev[side], [field]: value } }));
+    // The parked copy is a snapshot of the moment it was sent. Once a value
+    // changes, leaving its code on screen would invite handing over numbers
+    // the clinician has already corrected.
+    setSentHandoff(null);
   }
 
   function clearEye(side: EyeSide) {
     setRows((prev) => ({ ...prev, [side]: emptyRow(side) }));
+    setSentHandoff(null);
   }
 
   const plan = planCalculation(rows.OD, rows.OS);
@@ -398,6 +412,27 @@ function App() {
       setHandoffError(err instanceof Error ? err.message : t.handoffFailed);
     } finally {
       setHandoffBusy(false);
+    }
+  }
+
+  /**
+   * Hands this one patient to the other machine — the commonest case of all,
+   * since a single exam is photographed on the phone and typed on the
+   * hospital PC. It travels as a batch of one and arrives as a single row,
+   * carrying the result if there already is one.
+   */
+  async function sendHandoff() {
+    setHandoffError(null);
+    try {
+      const item = singlePatientItem({
+        patientName,
+        rows,
+        result: result ?? undefined,
+        submitted: submitted ?? undefined,
+      });
+      setSentHandoff(await parkHandoff(toPortableBatch([item], settings, kIndex)));
+    } catch (err) {
+      setHandoffError(err instanceof Error ? err.message : t.handoffFailed);
     }
   }
 
@@ -689,11 +724,28 @@ function App() {
         <a href={CALCULATOR_URL} target="_blank" rel="noopener noreferrer" className="secondary link-btn">
           {t.openCalculator}
         </a>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => void sendHandoff()}
+          disabled={!hasWorkToHandOff(rows)}
+        >
+          {t.handoffSend}
+        </button>
         {planProblem && <p className="hint">{planProblem}</p>}
         {plan.ok && skippedNotes.length > 0 && (
           <p className="scan-message">{skippedNotes.join(" ")}</p>
         )}
         {calculating && <p className="hint">{t.cloudflareHint}</p>}
+        {sentHandoff && (
+          <div className="handoff-code-box">
+            <p className="hint">{t.handoffCodeHint(1)}</p>
+            <p className="handoff-code">{sentHandoff.code}</p>
+            <p className="hint">
+              {t.handoffCodeExpiry(new Date(sentHandoff.expiresAt).toLocaleTimeString())}
+            </p>
+          </div>
+        )}
       </section>
       )}
 
