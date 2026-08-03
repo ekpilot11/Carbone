@@ -1,0 +1,9 @@
+# Shell scripts must keep Unix line endings even when checked out on Windows.
+# Git for Windows rewrites them to CRLF by default, which turns a script's
+# "#!/bin/sh" into "#!/bin/sh\r" — and Linux then reports the script itself
+# as "not found", because it is looking for an interpreter whose name ends
+# in a carriage return. The container is built from a Windows checkout, so
+# this is not hypothetical.
+*.sh text eol=lf
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf

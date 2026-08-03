@@ -47,7 +47,13 @@ RUN cd backend && npx playwright install --with-deps chromium \
 COPY --from=backend /app/backend/dist ./backend/dist
 COPY --from=frontend /app/frontend/dist ./frontend/dist
 COPY start-lens.sh /usr/local/bin/start-lens.sh
-RUN chmod +x /usr/local/bin/start-lens.sh
+# The carriage returns are stripped as well as the file being made
+# executable. .gitattributes already asks Git to check this file out with
+# Unix line endings, but a build from a working copy that predates it (or
+# from an editor that "helpfully" converts on save) would otherwise fail
+# with the script itself reported as "not found" — a CRLF shebang names an
+# interpreter that does not exist. Cheap insurance against a confusing hour.
+RUN sed -i 's/\r$//' /usr/local/bin/start-lens.sh && chmod +x /usr/local/bin/start-lens.sh
 
 ENV FRONTEND_DIST=/app/frontend/dist
 # Mount a volume here: this is where a Cloudflare clearance a human earned
