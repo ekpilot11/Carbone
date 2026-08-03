@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChallengeOverlay } from "./ChallengeOverlay";
 import {
   calculateBarrett,
+  parkHandoff,
   scanPhoto,
   ScanUnavailableError,
   type CalculateResponse,
@@ -16,6 +17,7 @@ import {
   partialSides,
   runWithConcurrency,
   SCAN_CONCURRENCY,
+  toPortableBatch,
   type BatchItem,
 } from "../lib/batch";
 import {
@@ -43,7 +45,10 @@ import type { EyeSide } from "../lib/types";
 interface BatchPanelProps {
   t: Strings;
   lang: Lang;
-  files: File[];
+  /** Photos to scan. Null when the batch arrived by handoff code instead. */
+  files: File[] | null;
+  /** Rows picked up from another device — already scanned, nothing to read. */
+  restored?: BatchItem[];
   settings: LensSettings;
   kIndex: string;
   onClose: () => void;
@@ -55,10 +60,20 @@ interface BatchPanelProps {
  * flow's rules all still apply per row — K1 is the lower K, an eye is either
  * complete or ignored, nothing is calculated that the clinician hasn't seen.
  */
-export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchPanelProps) {
-  const [items, setItems] = useState<BatchItem[]>([]);
+export function BatchPanel({
+  t,
+  lang,
+  files,
+  restored,
+  settings,
+  kIndex,
+  onClose,
+}: BatchPanelProps) {
+  const [items, setItems] = useState<BatchItem[]>(restored ?? []);
   const [calculating, setCalculating] = useState(false);
   const [copied, setCopied] = useState<"rich" | "source" | null>(null);
+  const [handoff, setHandoff] = useState<{ code: string; expiresAt: number } | null>(null);
+  const [handoffError, setHandoffError] = useState<string | null>(null);
   // Reading the newest items (and strings) inside the long-running queues
   // without making them dependencies of the effect that starts them —
   // rescanning a day's photos because the language changed would be absurd.
@@ -74,12 +89,13 @@ export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchP
   // Scan everything as soon as the files arrive; the review list fills in as
   // results land rather than waiting for the slowest photo.
   useEffect(() => {
+    if (!files) return;
     let cancelled = false;
     const queue = createBatchItems(files);
     setItems(queue);
 
     void runWithConcurrency(queue, SCAN_CONCURRENCY, async (item) => {
-      if (cancelled) return;
+      if (cancelled || !item.file) return;
       try {
         const { base64, mediaType } = await prepareImage(item.file);
         const scan = await scanPhoto(base64, mediaType);
@@ -140,7 +156,9 @@ export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchP
 
     return () => {
       cancelled = true;
-      for (const item of queue) URL.revokeObjectURL(item.previewUrl);
+      for (const item of queue) {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      }
     };
   }, [files]);
 
@@ -244,6 +262,20 @@ export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchP
     }
   }
 
+  /**
+   * Hands the day over to the other machine. The photos stay here — what
+   * crosses is the reviewed values and the results, which is all the hospital
+   * PC needs to produce records.
+   */
+  async function handOff() {
+    setHandoffError(null);
+    try {
+      setHandoff(await parkHandoff(toPortableBatch(items, settings, kIndex)));
+    } catch (err) {
+      setHandoffError(err instanceof Error ? err.message : t.handoffFailed);
+    }
+  }
+
   const counts = countBatch(items);
   const calculable = items.filter(
     (item) => (item.status !== "done" || isStale(item)) && isItemCalculable(item),
@@ -293,7 +325,24 @@ export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchP
         >
           {t.batchDownloadAll(counts.done)}
         </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => void handOff()}
+          disabled={items.length === 0}
+        >
+          {t.handoffSend}
+        </button>
       </div>
+
+      {handoff && (
+        <div className="handoff-code-box">
+          <p className="hint">{t.handoffCodeHint(items.length)}</p>
+          <p className="handoff-code">{handoff.code}</p>
+          <p className="hint">{t.handoffCodeExpiry(new Date(handoff.expiresAt).toLocaleTimeString())}</p>
+        </div>
+      )}
+      {handoffError && <p className="scan-message">{handoffError}</p>}
       {calculating && <p className="hint">{t.batchCalculatingHint}</p>}
       <ChallengeOverlay t={t} active={calculating} />
 

@@ -27,8 +27,9 @@ export type BatchStatus =
 export interface BatchItem {
   id: string;
   fileName: string;
-  file: File;
-  previewUrl: string;
+  /** Null for a row that arrived by handoff: the photo stayed on the phone. */
+  file: File | null;
+  previewUrl: string | null;
   status: BatchStatus;
   /** Read from the photo when legible; editable either way. */
   patientName: string;
@@ -45,6 +46,86 @@ export interface BatchItem {
     kIndex: string;
     rows: Record<EyeSide, EyeRowState>;
   };
+}
+
+/**
+ * A batch stripped to what can cross a network: the values, not the photos.
+ *
+ * `file` and `previewUrl` are browser objects and cannot be sent anywhere;
+ * more to the point, the photographs are the most identifying thing this app
+ * touches, and the handoff is deliberately built without them. What arrives
+ * on the other device is what the clinician already reviewed — names, values,
+ * results — and the photo stays on the phone that took it.
+ */
+export interface PortableBatchItem {
+  fileName: string;
+  status: BatchStatus;
+  patientName: string;
+  rows: Record<EyeSide, EyeRowState>;
+  note?: string;
+  error?: string;
+  result?: CalculateResponse;
+  submitted?: BatchItem["submitted"];
+}
+
+export interface PortableBatch {
+  version: 1;
+  items: PortableBatchItem[];
+  settings: LensSettings;
+  kIndex: string;
+}
+
+export function toPortableBatch(
+  items: BatchItem[],
+  settings: LensSettings,
+  kIndex: string,
+): PortableBatch {
+  return {
+    version: 1,
+    settings,
+    kIndex,
+    items: items.map((item) => ({
+      fileName: item.fileName,
+      // A photo still being scanned can't be handed over — there is no image
+      // on the other side to finish scanning. It arrives as a row to fill in.
+      status: item.status === "scanning" ? "ready" : item.status,
+      patientName: item.patientName,
+      rows: item.rows,
+      note: item.note,
+      error: item.error,
+      result: item.result,
+      submitted: item.submitted,
+    })),
+  };
+}
+
+/** Rebuilds rows from a handoff. Photoless, so nothing can be re-scanned. */
+export function fromPortableBatch(batch: PortableBatch): BatchItem[] {
+  return batch.items.map((item, index) => ({
+    id: `handoff-${index}-${item.fileName}`,
+    fileName: item.fileName,
+    file: null,
+    previewUrl: null,
+    status: item.status,
+    patientName: item.patientName,
+    rows: item.rows,
+    note: item.note,
+    error: item.error,
+    result: item.result,
+    submitted: item.submitted,
+  }));
+}
+
+export function isPortableBatch(value: unknown): value is PortableBatch {
+  if (typeof value !== "object" || value === null) return false;
+  const batch = value as Partial<PortableBatch>;
+  return (
+    batch.version === 1 &&
+    Array.isArray(batch.items) &&
+    typeof batch.kIndex === "string" &&
+    typeof batch.settings === "object" &&
+    batch.settings !== null
+  );
 }
 
 export function createBatchItems(files: File[]): BatchItem[] {

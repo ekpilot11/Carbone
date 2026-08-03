@@ -104,6 +104,19 @@ const en = {
   planEmpty: "Fill in every field for at least one eye to enable calculation.",
   cloudflareHint:
     'Usually nothing else is needed. If the calculator site asks for a security check, it appears here to be completed by hand — click "Verify you are human" and the calculation continues on its own.',
+  handoffSend: "Continue on another device",
+  handoffCodeHint: (count: number) =>
+    `${count} patient${count === 1 ? "" : "s"} saved. Type this code into the app on the other device to carry on there. The photos stay on this one — the values and results travel.`,
+  handoffCodeExpiry: (time: string) =>
+    `The code works once, and only until ${time}. Nothing is written to disk on the server.`,
+  handoffOpenLabel: "Or pick up work from another device",
+  handoffCodePlaceholder: "Code from the other device",
+  handoffOpen: "Open",
+  handoffOpening: "Opening…",
+  handoffFailed: "Couldn't reach the server to hand the work over.",
+  handoffUnreadable:
+    "That code opened, but what came back wasn't a day's work this version understands. Check both devices are running the same version.",
+
   challengeTitle: "The calculator site is asking for a security check",
   challengeHint:
     'This is the real calculator page, shown live from wherever the automation is running. Tick "Verify you are human" below — the check only counts when a person does it, and the calculation continues by itself afterwards. Your patient values have not been sent anywhere yet.',
@@ -297,6 +310,19 @@ const pt: Strings = {
   planEmpty: "Preencha todos os campos de pelo menos um olho para liberar o cálculo.",
   cloudflareHint:
     'Normalmente nada mais é preciso. Se o site da calculadora pedir verificação de segurança, ela aparece aqui para ser feita à mão — clique em "Verify you are human" e o cálculo continua sozinho.',
+  handoffSend: "Continuar em outro dispositivo",
+  handoffCodeHint: (count: number) =>
+    `${count} paciente${count === 1 ? "" : "s"} salvo${count === 1 ? "" : "s"}. Digite este código no app do outro dispositivo para continuar por lá. As fotos ficam neste aparelho — o que viaja são os valores e os resultados.`,
+  handoffCodeExpiry: (time: string) =>
+    `O código funciona uma vez, e só até ${time}. Nada é gravado em disco no servidor.`,
+  handoffOpenLabel: "Ou retome o trabalho de outro dispositivo",
+  handoffCodePlaceholder: "Código do outro dispositivo",
+  handoffOpen: "Abrir",
+  handoffOpening: "Abrindo…",
+  handoffFailed: "Não foi possível falar com o servidor para transferir o trabalho.",
+  handoffUnreadable:
+    "O código abriu, mas o conteúdo não é um dia de trabalho que esta versão entenda. Verifique se os dois dispositivos estão na mesma versão.",
+
   challengeTitle: "O site da calculadora está pedindo uma verificação de segurança",
   challengeHint:
     'Esta é a página real da calculadora, mostrada ao vivo de onde a automação está rodando. Marque "Verify you are human" abaixo — a verificação só vale quando uma pessoa a faz, e depois o cálculo segue sozinho. Os valores do paciente ainda não foram enviados a lugar nenhum.',

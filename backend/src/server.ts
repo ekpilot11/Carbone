@@ -11,6 +11,7 @@ import {
   fetchLensOptions,
   runBarrettCalculation,
 } from "./barrett.js";
+import { clearHandoffs, collectHandoff, parkHandoff } from "./handoff.js";
 import { scanImage, visionConfigured } from "./scan.js";
 import type { CalculateRequest } from "./types.js";
 import { validateCalculateRequest } from "./validate.js";
@@ -31,6 +32,9 @@ app.use(cors(allowedOrigins.length > 0 ? { origin: allowedOrigins } : {}));
 // Clinical values are tiny; photographs are not, so the scan route gets its
 // own limit rather than raising it for every endpoint.
 app.use("/api/scan", express.json({ limit: "12mb" }));
+// A day's handoff is thirty patients' values and results — bigger than a
+// single calculation, nowhere near a photograph.
+app.use("/api/handoff", express.json({ limit: "2mb" }));
 app.use(express.json({ limit: "20kb" }));
 
 const MEDIA_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
@@ -145,6 +149,38 @@ app.post("/api/challenge/:id/input", async (req, res) => {
   res.json({ ok: true });
 });
 
+/**
+ * Carrying a day's work from the phone to the hospital PC.
+ *
+ * The two machines have no other way to reach each other, so the work is
+ * parked here under a short code and collected on the other one. See
+ * handoff.ts for what that store will and won't do — in short: memory only,
+ * expires the same day, no photographs, and reading it deletes it.
+ */
+app.post("/api/handoff", (req, res) => {
+  const payload = req.body;
+  if (payload === null || typeof payload !== "object") {
+    res.status(400).json({ error: "Expected the work to hand off as a JSON object." });
+    return;
+  }
+  // Deliberately not logging the payload: it carries patient names and
+  // clinical values.
+  res.json(parkHandoff(payload));
+});
+
+app.get("/api/handoff/:code", (req, res) => {
+  const payload = collectHandoff(req.params.code);
+  if (payload === null) {
+    res.status(404).json({
+      error:
+        "That code doesn't match anything. Codes last the working day, and each one can be " +
+        "opened once — if this device already opened it, the work is here, not on the server.",
+    });
+    return;
+  }
+  res.json({ payload });
+});
+
 app.get("/healthz", (_req, res) => {
   res.json({ ok: true, visionScanning: visionConfigured() });
 });
@@ -168,6 +204,7 @@ if (existsSync(frontendDist)) {
 // Runs share one Chromium process; hand it back rather than orphaning it.
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
+    clearHandoffs();
     void closeSharedBrowser().finally(() => process.exit(0));
   });
 }

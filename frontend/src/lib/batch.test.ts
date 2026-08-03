@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   countBatch,
+  fromPortableBatch,
   isItemCalculable,
+  isPortableBatch,
   isStale,
   itemSides,
   partialSides,
   runWithConcurrency,
+  toPortableBatch,
   type BatchItem,
 } from "./batch";
 import { emptyRow } from "./eyeRow";
@@ -122,5 +125,73 @@ describe("runWithConcurrency", () => {
 
   it("handles an empty queue", async () => {
     await expect(runWithConcurrency([], 3, async () => {})).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * The handoff exists because the phone and the hospital PC can't reach each
+ * other. What crosses has to be everything needed to finish the work — and
+ * nothing that identifies a patient more than it must.
+ */
+describe("carrying a day's work to another device", () => {
+  const settings = { lens: "Personal Constant", lensFactor: "1.57", aConstant: "118.4" };
+  const day = [
+    item({
+      id: "a",
+      patientName: "Ana Souza",
+      status: "done",
+      rows: { OD: { ...emptyRow("OD"), ...COMPLETE }, OS: emptyRow("OS") },
+      result: { resultsText: "…", recommended: { od: "21.50" } },
+      submitted: {
+        sides: ["OD"],
+        settings,
+        kIndex: "1.3375",
+        rows: { OD: { ...emptyRow("OD"), ...COMPLETE }, OS: emptyRow("OS") },
+      },
+    }),
+    item({ id: "b", fileName: "two.jpg", patientName: "Bruno", note: "K values only" }),
+  ];
+
+  it("carries the values, the results and what produced them", () => {
+    const restored = fromPortableBatch(toPortableBatch(day, settings, "1.3375"));
+    expect(restored).toHaveLength(2);
+    expect(restored[0].patientName).toBe("Ana Souza");
+    expect(restored[0].rows.OD.axialLength).toBe("22.98");
+    expect(restored[0].result?.recommended?.od).toBe("21.50");
+    expect(restored[0].submitted?.sides).toEqual(["OD"]);
+    expect(restored[1].note).toBe("K values only");
+    // Still trustworthy on the other side: a restored row that matches what
+    // was calculated must not be flagged as edited.
+    expect(isStale(restored[0])).toBe(false);
+  });
+
+  it("leaves the photographs behind", () => {
+    const portable = toPortableBatch(day, settings, "1.3375");
+    expect(JSON.stringify(portable)).not.toContain("previewUrl");
+    const restored = fromPortableBatch(portable);
+    expect(restored[0].file).toBeNull();
+    expect(restored[0].previewUrl).toBeNull();
+  });
+
+  /** A photo mid-scan has no image on the other side, so it arrives as a row to fill in. */
+  it("does not hand over a scan that never finished", () => {
+    const restored = fromPortableBatch(
+      toPortableBatch([item({ status: "scanning" })], settings, "1.3375"),
+    );
+    expect(restored[0].status).toBe("ready");
+  });
+
+  it("carries the lens and K index the work was done with", () => {
+    const named = { lens: "Alcon SN60WF", lensFactor: "1.88", aConstant: "118.99" };
+    const portable = toPortableBatch(day, named, "1.332");
+    expect(portable.settings).toEqual(named);
+    expect(portable.kIndex).toBe("1.332");
+  });
+
+  it("refuses anything that isn't a day's work", () => {
+    expect(isPortableBatch(toPortableBatch(day, settings, "1.3375"))).toBe(true);
+    expect(isPortableBatch(null)).toBe(false);
+    expect(isPortableBatch({ items: [] })).toBe(false);
+    expect(isPortableBatch({ version: 2, items: [], settings, kIndex: "1.3375" })).toBe(false);
   });
 });

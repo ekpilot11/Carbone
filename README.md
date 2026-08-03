@@ -350,18 +350,43 @@ protection, it just moves a person's hand to where the window is.
 The clearance that earns is kept in the browser profile, so it isn't asked
 for again on every run (`backend/README.md` has the details and the limits).
 
-### Still missing for the phone → PC handoff
+### Phone → PC: carrying the day across
 
-Uploading on the phone does **not** yet make those patients appear on the
-hospital PC: the batch lives in the browser tab it was uploaded in. Hosting
-is the prerequisite for fixing that; the work itself — a session the server
-keeps, reopenable from another device, and a login once more than one
-person uses it — hasn't been done.
+The two machines can't reach each other, so the work travels by a code.
+
+On the phone, after reviewing (and calculating, if you like), press
+**Continue on another device**. An eight-character code appears. Type it
+into the same app on the hospital PC, under *Or pick up work from another
+device*, and the whole day arrives there — every patient's name, values,
+results and notes — ready to calculate or to copy records from.
+
+What the server does with it, deliberately:
+
+- **Memory only, never disk.** A restart loses parked work, which is the
+  right trade: re-uploading costs minutes, a file of patient data outliving
+  its day is a different kind of problem.
+- **One collection, then gone.** Reading a code deletes it — the work now
+  lives on the device that asked for it. A code that keeps working is a code
+  that keeps being a way in.
+- **Expires the same day** (8 hours), collected or not.
+- **No photographs.** Only the values read off them. The images are the most
+  identifying thing the app touches and they never leave the phone.
+- Codes are 8 characters from an alphabet with no look-alikes (no `0`/`O`,
+  no `1`/`I`) — about a trillion combinations, because a short PIN would be
+  guessable and this is the only thing in front of a patient list.
+
+A photo still being scanned isn't handed over as one — there's no image on
+the other side to finish reading — so it arrives as a row to fill in.
+
+The code is a bearer token: whoever has it gets that day's work, once. Treat
+it like the records themselves, and put the server behind your own access
+control before real use.
 
 ## Testing
 
 ```bash
-cd frontend && npm test    # OCR parsing + form-state unit tests
+cd frontend && npm test    # OCR parsing, form state, batch + handoff
+cd backend && npm test     # the handoff store
 cd frontend && npm run build
 cd backend && npm run build
 ```

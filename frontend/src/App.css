@@ -705,3 +705,54 @@ button.secondary,
 .challenge-typing input {
   flex: 1;
 }
+
+/* Carrying a day's work between two machines that can't reach each other.
+   The code is read off one screen and typed into another, so it is set big,
+   monospaced and widely spaced — misreading it is the whole failure mode. */
+.handoff-open {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid #eef1f4;
+}
+
+.handoff-open label {
+  display: block;
+  font-size: 0.9rem;
+  color: #55606d;
+  margin-bottom: 0.35rem;
+}
+
+.handoff-open-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.handoff-open-row input {
+  flex: 1;
+  min-width: 12rem;
+  font-family: ui-monospace, "Cascadia Mono", Menlo, monospace;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.handoff-code-box {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #ccd3db;
+  border-radius: 8px;
+  background: #f4f6f8;
+  text-align: center;
+}
+
+.handoff-code {
+  margin: 0.35rem 0;
+  font-family: ui-monospace, "Cascadia Mono", Menlo, monospace;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  color: #1a1f27;
+  /* Selectable by double-tap on a phone, for the case where both devices
+     can paste. */
+  user-select: all;
+}

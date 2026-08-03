@@ -128,6 +128,34 @@ export async function sendChallengeInput(
   });
 }
 
+/**
+ * Parks a day's work on the server under a short code, so it can be picked
+ * up on the other machine. The server keeps it in memory only, for the
+ * working day, and forgets it the moment it is collected.
+ */
+export async function parkHandoff(payload: unknown): Promise<{ code: string; expiresAt: number }> {
+  const res = await fetch(`${API_BASE}/api/handoff`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? `Couldn't save the work (${res.status}).`);
+  }
+  return res.json();
+}
+
+export async function collectHandoff(code: string): Promise<unknown> {
+  const res = await fetch(`${API_BASE}/api/handoff/${encodeURIComponent(code.trim())}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? `Couldn't open that code (${res.status}).`);
+  }
+  const body = (await res.json()) as { payload?: unknown };
+  return body.payload;
+}
+
 export async function calculateBarrett(payload: CalculateRequest): Promise<CalculateResponse> {
   const res = await fetch(`${API_BASE}/api/calculate`, {
     method: "POST",

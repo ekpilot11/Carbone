@@ -5,12 +5,14 @@ import { CameraCapture } from "./components/CameraCapture";
 import { ChallengeOverlay } from "./components/ChallengeOverlay";
 import {
   calculateBarrett,
+  collectHandoff,
   fetchLensOptions,
   scanPhoto,
   ScanUnavailableError,
   type CalculateResponse,
   type IolTableRow,
 } from "./lib/api";
+import { fromPortableBatch, isPortableBatch, type BatchItem } from "./lib/batch";
 import { prepareImage } from "./lib/imagePrep";
 import {
   applyBiometry,
@@ -119,6 +121,13 @@ function App() {
   const [patientName, setPatientName] = useState("");
   // A day's photos, one patient each. Set by picking several files at once.
   const [batchFiles, setBatchFiles] = useState<File[] | null>(null);
+  // A day's work picked up from another device, by code.
+  const [handoffCode, setHandoffCode] = useState("");
+  const [handoffBusy, setHandoffBusy] = useState(false);
+  const [handoffError, setHandoffError] = useState<string | null>(null);
+  const [restoredBatch, setRestoredBatch] = useState<BatchItem[] | null>(null);
+  const [restoredSettings, setRestoredSettings] = useState<LensSettings | null>(null);
+  const [restoredKIndex, setRestoredKIndex] = useState<string | null>(null);
 
   const eyeTitles = useMemo<Record<EyeSide, string>>(
     () => ({ OD: t.eyeOd, OS: t.eyeOs }),
@@ -364,6 +373,34 @@ function App() {
     : constantsProblem;
   const canCalculate = plan.ok && constantsProblem === null;
 
+  /**
+   * Collects a day's work parked by the other device.
+   *
+   * What arrives is rows and results, never the photographs — so this opens
+   * the batch view with everything already reviewed, ready to calculate or to
+   * copy records from. The code works once; the work now lives in this tab.
+   */
+  async function openHandoff() {
+    setHandoffBusy(true);
+    setHandoffError(null);
+    try {
+      const payload = await collectHandoff(handoffCode);
+      if (!isPortableBatch(payload)) {
+        setHandoffError(t.handoffUnreadable);
+        return;
+      }
+      setRestoredBatch(fromPortableBatch(payload));
+      setRestoredSettings(payload.settings);
+      setRestoredKIndex(payload.kIndex);
+      setBatchFiles(null);
+      setHandoffCode("");
+    } catch (err) {
+      setHandoffError(err instanceof Error ? err.message : t.handoffFailed);
+    } finally {
+      setHandoffBusy(false);
+    }
+  }
+
   async function handleCalculate() {
     if (!plan.ok || constantsProblem !== null) return;
     setCalcError(null);
@@ -496,6 +533,39 @@ function App() {
           previewUrl={batchFiles ? null : preview}
           busy={scanBusy}
         />
+
+        {/* Picking a day's work up on the other machine. The phone and the
+            hospital PC can't reach each other, so the work travels by a code
+            typed here. */}
+        {!batchFiles && !restoredBatch && (
+          <div className="handoff-open">
+            <label htmlFor="handoff-code">{t.handoffOpenLabel}</label>
+            <div className="handoff-open-row">
+              <input
+                id="handoff-code"
+                type="text"
+                inputMode="text"
+                autoCapitalize="characters"
+                spellCheck={false}
+                placeholder={t.handoffCodePlaceholder}
+                value={handoffCode}
+                onChange={(event) => setHandoffCode(event.target.value.toUpperCase())}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void openHandoff();
+                }}
+              />
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => void openHandoff()}
+                disabled={handoffBusy || handoffCode.trim() === ""}
+              >
+                {handoffBusy ? t.handoffOpening : t.handoffOpen}
+              </button>
+            </div>
+            {handoffError && <p className="scan-message">{handoffError}</p>}
+          </div>
+        )}
       </section>
 
       {scanMessage && <p className="scan-message">{scanMessage}</p>}
@@ -586,14 +656,21 @@ function App() {
         )}
       </section>
 
-      {batchFiles && (
+      {(batchFiles || restoredBatch) && (
         <BatchPanel
+          // Remounts when a handoff arrives, so the panel starts from those
+          // rows rather than merging them into whatever was on screen.
+          key={restoredBatch ? "handoff" : "files"}
           t={t}
           lang={lang}
           files={batchFiles}
-          settings={settings}
-          kIndex={kIndex}
-          onClose={() => setBatchFiles(null)}
+          restored={restoredBatch ?? undefined}
+          settings={restoredSettings ?? settings}
+          kIndex={restoredKIndex ?? kIndex}
+          onClose={() => {
+            setBatchFiles(null);
+            setRestoredBatch(null);
+          }}
         />
       )}
 
