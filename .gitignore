@@ -3,6 +3,10 @@ dist
 *.log
 .DS_Store
 
+# Chromium's profile — holds the calculator's cookies (including a Cloudflare
+# clearance a human earned), which are machine- and IP-specific.
+backend/browser-profile/
+
 # Automation debug artifacts (screenshots/HTML of the calculator page)
 backend/diagnostics/
 backend/inspect-output.json

@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { chromium, type Browser, type BrowserContext, type Frame, type Locator, type Page } from "playwright";
+import { chromium, type BrowserContext, type Frame, type Locator, type Page } from "playwright";
 import { DEFAULT_K_INDEX, K_INDEX_OPTIONS, PERSONAL_CONSTANT } from "./constants.js";
 import type { CalculateRequest, CalculateResponse, EyeInput, IolTableRow } from "./types.js";
 
@@ -288,6 +288,73 @@ async function fillEye(
 }
 
 /**
+ * Empties every measurement box this run is not filling.
+ *
+ * Runs used to get a brand-new browser context each time, which made this
+ * unnecessary — nothing could reach the form from the previous patient.
+ * Keeping the profile so a Cloudflare clearance survives keeps the site's
+ * session cookie and Chromium's own form memory with it, and either can put
+ * the last run's numbers back on the page. A leftover axial length in the
+ * eye we deliberately left out is the dangerous case: the site would
+ * calculate that eye too, and hand back a confident power for an eye nobody
+ * measured. So every box we aren't filling is emptied by hand and verified
+ * with the rest.
+ *
+ * A required box that can't even be found on a skipped eye is reported like
+ * any other missing field — it stops the run. The two optional boxes are
+ * best-effort: they aren't on every version of the form, and a form that
+ * never had a WTW field has no stale WTW to leave behind.
+ */
+async function clearUnusedFields(
+  root: SearchRoot,
+  request: CalculateRequest,
+  filled: FilledEntry[],
+): Promise<string[]> {
+  const targets: Array<{ side: string; field: PerEyeField; eyeIndex: 0 | 1; required: boolean }> = [];
+  for (const [eyeIndex, eye] of [request.od, request.os].entries()) {
+    const side = eyeIndex === 0 ? "OD" : "OS";
+    for (const field of Object.keys(PER_EYE_FIELDS) as PerEyeField[]) {
+      const optional = field === "lensThickness" || field === "wtw";
+      const supplied = eye !== undefined && !optional;
+      const suppliedOptional =
+        eye !== undefined &&
+        (field === "lensThickness"
+          ? eye.biometry.lensThickness !== undefined
+          : field === "wtw"
+            ? eye.biometry.wtw !== undefined
+            : false);
+      if (supplied || suppliedOptional) continue;
+      targets.push({
+        side,
+        field,
+        eyeIndex: eyeIndex as 0 | 1,
+        required: eye === undefined && !optional,
+      });
+    }
+  }
+
+  const controls = await Promise.all(
+    targets.map((target) => locateByLabelText(root, PER_EYE_FIELDS[target.field], target.eyeIndex)),
+  );
+
+  const missing: string[] = [];
+  for (const [i, target] of targets.entries()) {
+    const control = controls[i];
+    if (!control) {
+      if (target.required) missing.push(`${target.side} ${target.field} (to be cleared)`);
+      continue;
+    }
+    // Only touch a box that actually holds something: an empty one needs no
+    // clearing, and typing into it could wake the page's own handlers.
+    const current = (await control.inputValue().catch(() => "")).trim();
+    if (current === "") continue;
+    await control.fill("");
+    filled.push({ field: `${target.side} ${target.field} (cleared)`, locator: control, expected: "" });
+  }
+  return missing;
+}
+
+/**
  * Finds the radio for one keratometric index, by three routes in order of
  * how much they prove.
  *
@@ -435,25 +502,92 @@ async function selectLens(root: SearchRoot, lens: string): Promise<string> {
 }
 
 /**
- * Launching Chromium costs the better part of a second, so headless runs
- * share one process; each run still gets a fresh context, so no form state
- * or cookie survives from the previous patient. A visible (challenge)
- * window is always its own process, and a crashed browser is relaunched.
+ * Where Chromium keeps its profile between runs.
+ *
+ * The point is the Cloudflare clearance cookie: when a person completes the
+ * verification in the visible window, the cookie that proves it lands in
+ * this directory and is still there after a restart, so the next run isn't
+ * challenged again. Nothing is evaded — a human still solves every
+ * challenge; the profile only stops the answer being thrown away.
+ *
+ * The clearance is bound to the IP that earned it and expires on the site's
+ * schedule, so this reduces interruptions rather than removing them. The
+ * directory holds calc.apacrs.org's cookies and nothing else — no patient
+ * data ever reaches this browser beyond the clinical numbers typed into the
+ * form — but it is still per-machine state: don't commit it or copy it
+ * between hosts.
  */
-let sharedBrowser: Browser | null = null;
+const PROFILE_DIR = process.env.BARRETT_PROFILE_DIR ?? path.resolve("browser-profile");
 
-async function openBrowser(headless: boolean): Promise<{ browser: Browser; shared: boolean }> {
-  if (!headless) return { browser: await chromium.launch({ headless: false }), shared: false };
-  if (sharedBrowser?.isConnected()) return { browser: sharedBrowser, shared: true };
-  sharedBrowser = await chromium.launch({ headless: true });
-  return { browser: sharedBrowser, shared: true };
+/**
+ * Launching Chromium costs the better part of a second, so headless runs
+ * share one process and one profile; each run gets its own page. A visible
+ * (challenge) window has to take the profile over — Chromium allows only
+ * one process per profile directory, and the window solving the challenge
+ * is the one whose cookie has to be kept — so the shared browser hands it
+ * back first and reopens on the next run with the clearance in it.
+ */
+let sharedContext: BrowserContext | null = null;
+
+/** Headless runs currently holding a page open on the shared profile. */
+let activeSharedRuns = 0;
+
+/**
+ * Opens Chromium on the persistent profile, falling back to a throwaway
+ * one if the directory can't be used (another server already holds it, or
+ * the disk is read-only). A run that can't keep its cookies is worth far
+ * less than a run that doesn't happen.
+ */
+async function launchContext(headless: boolean): Promise<BrowserContext> {
+  try {
+    return await chromium.launchPersistentContext(PROFILE_DIR, { headless });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message.split("\n")[0] : String(err);
+    console.warn(
+      `Couldn't open the browser profile at ${PROFILE_DIR} (${reason}) — continuing without it. ` +
+        `Any Cloudflare verification will have to be completed again.`,
+    );
+    const browser = await chromium.launch({ headless });
+    return await browser.newContext();
+  }
+}
+
+/** Closes a context and, when it came from a throwaway browser, that too. */
+async function closeContext(context: BrowserContext): Promise<void> {
+  const browser = context.browser();
+  await context.close().catch(() => {});
+  await browser?.close().catch(() => {});
+}
+
+async function openContext(headless: boolean): Promise<{ context: BrowserContext; shared: boolean }> {
+  if (!headless) {
+    // Let the runs already in flight finish before taking the profile from
+    // under them; then hand it to the window the clinician will click in.
+    const deadline = Date.now() + 20000;
+    while (activeSharedRuns > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    }
+    await closeSharedBrowser();
+    return { context: await launchContext(false), shared: false };
+  }
+
+  if (sharedContext && sharedContext.browser()?.isConnected() !== false) {
+    return { context: sharedContext, shared: true };
+  }
+  const context = await launchContext(true);
+  // A browser that crashed or was handed over must never be handed out again.
+  context.once("close", () => {
+    if (sharedContext === context) sharedContext = null;
+  });
+  sharedContext = context;
+  return { context, shared: true };
 }
 
 /** Lets the server hand the shared Chromium back on shutdown. */
 export async function closeSharedBrowser(): Promise<void> {
-  const browser = sharedBrowser;
-  sharedBrowser = null;
-  await browser?.close().catch(() => {});
+  const context = sharedContext;
+  sharedContext = null;
+  if (context) await closeContext(context);
 }
 
 let cachedLensOptions: string[] | null = null;
@@ -468,11 +602,11 @@ let cachedLensOptions: string[] | null = null;
 export async function fetchLensOptions(): Promise<string[]> {
   if (cachedLensOptions) return cachedLensOptions;
 
-  const { browser, shared } = await openBrowser(true);
-  let context: BrowserContext | null = null;
+  const { context, shared } = await openContext(true);
+  if (shared) activeSharedRuns++;
+  let page: Page | null = null;
   try {
-    context = await browser.newContext();
-    const page = await context.newPage();
+    page = await context.newPage();
     await page.goto(CALCULATOR_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
     const root = await findFormRoot(page, 15000);
     if (!root) {
@@ -490,8 +624,9 @@ export async function fetchLensOptions(): Promise<string[]> {
     cachedLensOptions = options;
     return options;
   } finally {
-    await context?.close().catch(() => {});
-    if (!shared) await browser.close().catch(() => {});
+    await page?.close().catch(() => {});
+    if (shared) activeSharedRuns--;
+    else await closeContext(context);
   }
 }
 
@@ -654,6 +789,15 @@ async function verifyFills(filled: FilledEntry[]): Promise<string[]> {
   const mismatches: string[] = [];
   for (const [i, entry] of filled.entries()) {
     const actual = actuals[i];
+    // A box that was cleared has to be empty, not merely numerically equal:
+    // Number("") is 0, so the numeric comparison below would accept a
+    // leftover "0" as a successful clear.
+    if (entry.expected === "") {
+      if (actual.trim() !== "") {
+        mismatches.push(`${entry.field}: cleared it, but the field now contains "${actual}"`);
+      }
+      continue;
+    }
     const same =
       actual === entry.expected ||
       (Number.isFinite(Number(actual)) && Number(actual) === Number(entry.expected)) ||
@@ -880,13 +1024,16 @@ async function attemptCalculation(
   request: CalculateRequest,
   headless: boolean,
 ): Promise<CalculateResponse> {
-  const { browser, shared } = await openBrowser(headless);
-  let context: BrowserContext | null = null;
+  const { context, shared } = await openContext(headless);
+  if (shared) activeSharedRuns++;
+  let openPage: Page | null = null;
   try {
-    // A fresh context per run: a value left in a field we don't fill must
-    // never carry over from the previous patient.
-    context = await browser.newContext();
+    // A fresh page per run. The profile behind it is deliberately not fresh
+    // (see PROFILE_DIR), so a value left in a field we don't fill can no
+    // longer be ruled out by construction — clearUnusedFields below empties
+    // every box this run isn't filling.
     const page = await context.newPage();
+    openPage = page;
 
     // Old ASP.NET validators often report problems via alert() popups that
     // never appear in the DOM — capture them so failures can name the reason.
@@ -934,6 +1081,9 @@ async function attemptCalculation(
 
     const filled: FilledEntry[] = [];
     const missing = [
+      // Emptying first: a box the previous patient left filled must not be
+      // read by the page's own handlers while this run types around it.
+      ...(await clearUnusedFields(formRoot, request, filled)),
       ...(await fillPatientPlaceholder(formRoot, filled)),
       // A named lens brings the manufacturer's own constants with it — typing
       // this practice's Lens Factor over them would calculate the wrong lens.
@@ -1046,7 +1196,10 @@ async function attemptCalculation(
       warning,
     };
   } finally {
-    await context?.close().catch(() => {});
-    if (!shared) await browser.close().catch(() => {});
+    await openPage?.close().catch(() => {});
+    if (shared) activeSharedRuns--;
+    // The visible window is closed too — its whole job was to earn the
+    // clearance cookie, and that now lives in the profile on disk.
+    else await closeContext(context);
   }
 }

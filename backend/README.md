@@ -100,10 +100,11 @@ Almost all of the difference was time spent waiting for nothing:
   The signal is only trusted if it wasn't already showing before Calculate
   was clicked; otherwise the old poll-for-results path still applies.
 - **One browser, many runs.** Chromium is launched once and reused, which is
-  most of the cold/warm difference. Every run still gets a **fresh context**,
-  so no cookie or leftover field value can carry from one patient to the
-  next. A visible (Cloudflare) window is always its own process, and the
-  shared one is closed on SIGINT/SIGTERM.
+  most of the cold/warm difference. Every run gets a fresh **page**; the
+  profile behind it is kept on purpose (see "Keeping the Cloudflare
+  clearance"), so leftover values are ruled out by clearing them explicitly
+  instead of by throwing the browser away. The shared browser is closed on
+  SIGINT/SIGTERM.
 - **No redundant postback.** Selecting the lens is skipped when the dropdown
   already shows it — the common case, since both it and the site default to
   "Personal Constant" — which also skips waiting for the page to settle.
@@ -124,6 +125,11 @@ the live site (and from machines that can't reach it).
 ```bash
 npm run mock                      # serves http://127.0.0.1:4100/
 BARRETT_URL=http://127.0.0.1:4100/ npm run dev
+
+# The same form, served with the previous patient's numbers already in every
+# box — what a persistent browser profile makes possible, and what
+# clearUnusedFields exists to undo.
+BARRETT_URL='http://127.0.0.1:4100/?sticky=1' npm run dev
 ```
 
 `BARRETT_URL` exists for this; leave it unset and every run goes to the
@@ -138,7 +144,10 @@ npm run dev      # ts-node-style dev server on :4000, via tsx
 npm run build && npm start   # compiled
 ```
 
-Environment: `PORT` (default `4000`).
+Environment: `PORT` (default `4000`), `BARRETT_PROFILE_DIR` (default
+`./browser-profile` — see "Keeping the Cloudflare clearance"),
+`BARRETT_HEADLESS=1` to forbid the visible challenge window, `BARRETT_URL`
+for the offline mock, `ANTHROPIC_API_KEY` for photo scanning.
 
 ## Endpoints
 
@@ -231,6 +240,52 @@ to forbid the visible fallback; challenged runs then fail with a clear
 error. If truly unattended automation is ever needed, ask APACRS about
 sanctioned programmatic access rather than working around their
 protection.
+
+### Keeping the Cloudflare clearance
+
+Chromium runs on a **persistent profile** (`browser-profile/` beside the
+server, or wherever `BARRETT_PROFILE_DIR` points), so the clearance cookie a
+person earns by completing a verification is still there on the next run —
+and after a restart. Nothing about the challenge is bypassed: a human still
+solves every one; the profile only stops the answer being thrown away
+immediately.
+
+What it does not do:
+
+- **It is bound to the IP that earned it.** A clearance solved on a phone
+  cannot be moved to a server; it has to be solved in the server's own
+  browser.
+- **Its lifetime is APACRS's setting**, not ours — anywhere from half an
+  hour to a year, and it can be invalidated at any time. So this makes
+  challenges rarer, it does not make them stop.
+- Only one Chromium may hold a profile directory at a time. When a run needs
+  the visible window, the shared headless browser waits for the runs in
+  flight (up to 20s), closes, and hands the profile over; the next headless
+  run reopens it with the new cookie inside. If the directory can't be used
+  at all — a second server instance already has it, a read-only disk — the
+  run continues on a throwaway profile and says so on the console.
+
+The directory holds calc.apacrs.org's cookies and Chromium's own state. No
+patient data reaches this browser beyond the clinical numbers typed into the
+form, but it is still per-machine state: it's gitignored, and copying it
+between hosts gains nothing.
+
+**What this costs, and how it's paid for.** A fresh context per run used to
+make one guarantee for free: nothing from the previous patient could
+possibly be on the form. Persisting the profile persists the site's session
+cookie and the browser's own form memory with it, so that guarantee has to
+be earned instead. Before anything is typed, `clearUnusedFields` empties
+every measurement box this run is *not* filling — both eyes' worth when an
+eye is skipped, and the two optional boxes when no value was supplied — and
+those boxes are read back with the rest, where "cleared" means empty, not
+merely "numerically equal to nothing". A required box that can't be found on
+a skipped eye stops the run like any other missing field.
+
+This is not theoretical. Against `?sticky=1` on the mock (below), which
+serves the form with the previous patient's numbers already in it, a
+one-eye run without that clearing makes the site calculate **both** eyes and
+report a power for an eye nobody measured; with it, one eye in and one eye
+out.
 
 ## Notes
 

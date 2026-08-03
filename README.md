@@ -220,7 +220,10 @@ same inputs. Two operational notes:
   invisible by default; when Cloudflare challenges (intermittently), a
   **visible** browser window opens so the person at the machine can
   complete the verification by hand — this project deliberately does not
-  evade bot protection. See [`backend/README.md`](backend/README.md).
+  evade bot protection. The clearance that person earns is kept in a
+  persistent browser profile, so it isn't thrown away after one run; it is
+  tied to that machine's IP and expires on APACRS's schedule.
+  See [`backend/README.md`](backend/README.md).
 - If the site's form layout ever changes and runs start failing, re-pin
   the selectors with `npm run inspect` per the backend README, and fall
   back to the app's "Copy values" / "Open calculator manually" buttons

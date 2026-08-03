@@ -14,6 +14,26 @@ import { createServer } from "node:http";
 /** How long the mock pretends to compute, so the readiness wait is real. */
 const CALC_DELAY_MS = Number(process.env.MOCK_CALC_DELAY_MS ?? 800);
 
+/**
+ * Request the page as `/?sticky=1` and it comes back with the previous
+ * patient's numbers already in every box — the state a persistent browser
+ * profile makes possible (session cookie, browser form memory) and the
+ * reason the automation clears what it doesn't fill. A run for one eye
+ * against this page must still calculate one eye.
+ */
+const STICKY: Record<string, string> = {
+  al_r: "24.11", k1_r: "41.10", k2_r: "41.60", acd_r: "3.11", rx_r: "0",
+  lt_r: "4.55", wtw_r: "12.1",
+  al_l: "24.22", k1_l: "41.20", k2_l: "41.70", acd_l: "3.22", rx_l: "0",
+  lt_l: "4.65", wtw_l: "12.2",
+};
+
+function sticky(page: string): string {
+  return page.replace(/<input id="(\w+)">/g, (whole, id: string) =>
+    STICKY[id] ? `<input id="${id}" value="${STICKY[id]}">` : whole,
+  );
+}
+
 const PAGE = `<!doctype html>
 <html><head><meta charset="utf-8"><title>Barrett Universal II Formula (mock)</title></head>
 <body>
@@ -113,9 +133,9 @@ function calculate() {
 </body></html>`;
 
 const port = Number(process.env.MOCK_PORT ?? 4100);
-createServer((_req, res) => {
+createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  res.end(PAGE);
+  res.end(/[?&]sticky=1/.test(req.url ?? "") ? sticky(PAGE) : PAGE);
 }).listen(port, "127.0.0.1", () => {
   console.log(`Mock calculator on http://127.0.0.1:${port}/ (calc delay ${CALC_DELAY_MS}ms)`);
 });
