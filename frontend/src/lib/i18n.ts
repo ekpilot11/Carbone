@@ -154,9 +154,6 @@ const en = {
   recordDownload: "Download PDF record",
   recordOpeningLine: "PATIENT ATTENDED FOR EXAMS:",
   recordRetina: "RETINAL MAPPING:",
-  recordRetinaLabel: "Retinal mapping (your findings)",
-  recordRetinaHint:
-    "Goes into the record as written. It is pre-filled with the practice's normal-exam wording — this app never examines a retina, so check it against what you saw, or clear it to leave the section out.",
   recordRetinaDefault:
     "CLEAR MEDIA ; RETINA ATTACHED 360 ; PINK DISC ; PHYSIOLOGIC CUP ; VESSELS UNREMARKABLE.",
   recordBiometry: "BIOMETRY:",
@@ -343,9 +340,6 @@ const pt: Strings = {
   recordDownload: "Baixar prontuário em PDF",
   recordOpeningLine: "PACIENTE VEM PARA REALIZAR EXAMES:",
   recordRetina: "MAPEAMENTO RETINA:",
-  recordRetinaLabel: "Mapeamento de retina (o que você viu)",
-  recordRetinaHint:
-    "Vai para o prontuário como estiver escrito. Já vem com o texto de exame normal do serviço — este programa nunca examina a retina, então confira com o que você viu, ou apague para deixar a seção de fora.",
   recordRetinaDefault:
     "MEIOS TRANSPARENTES ; RETINA APLICADA 360 ; NERVO CORADO ; ESCV FISIOLOGICA ; VASOS SEM ALTERAÇOES.",
   recordBiometry: "BIOMETRIA:",

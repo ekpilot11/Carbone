@@ -188,10 +188,11 @@ CALCULO DA LENTE:  one line per eye, the power set larger
 The generated markup is byte-for-byte the clinic's own, checked against the
 source code of a record they formatted by hand.
 
-**The retina block is the one thing here the app cannot know.** It never
-examines a fundus, so the field is pre-filled with the practice's
-normal-exam wording and left editable per patient — correct it, or clear it
-and the section is omitted. Nothing asserts a finding on its own.
+The MAPEAMENTO RETINA block carries the practice's standard wording for
+both eyes. The app never examines a fundus, so that text is a starting
+point, not a finding: it is there to be corrected in the hospital system,
+which is where the clinician edits it anyway (their decision — the app used
+to ask, and the field was removed as unnecessary).
 
 Two buttons, because hospital editors filter pastes differently:
 

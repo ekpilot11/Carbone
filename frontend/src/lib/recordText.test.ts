@@ -9,7 +9,6 @@ const RECORD: MedicalRecordInput = {
   lang: "pt",
   kIndex: "1.3375",
   lens: { name: "Personal Constant", lensFactor: "1.57", aConstant: "118.4" },
-  retina: { OD: "MEIOS TRANSPARENTES ; RETINA APLICADA 360.", OS: "" },
   eyes: [
     {
       side: "OD",
@@ -61,15 +60,16 @@ describe("record as pasteable text", () => {
     expect(text).not.toContain("refração prevista");
   });
 
-  it("carries the fundus findings that were typed, and drops the eye left blank", () => {
+  /**
+   * The retina block is the practice's standard wording, both eyes, every
+   * time — a starting point they edit in the hospital system, which is why
+   * the app doesn't ask for it.
+   */
+  it("opens the retina section with the practice's standard wording", () => {
     const text = recordToText(RECORD);
     expect(text).toContain("MAPEAMENTO RETINA:");
-    expect(text).toContain("OD: MEIOS TRANSPARENTES ; RETINA APLICADA 360.");
-    expect(text).not.toContain("OE:  ");
-  });
-
-  it("leaves the retina section out entirely when nothing was written", () => {
-    expect(recordToText({ ...RECORD, retina: undefined })).not.toContain("MAPEAMENTO RETINA");
+    expect(text).toContain("OD: MEIOS TRANSPARENTES ; RETINA APLICADA 360 ; NERVO CORADO");
+    expect(text).toContain("OE: MEIOS TRANSPARENTES ; RETINA APLICADA 360 ; NERVO CORADO");
   });
 
   it("omits values that were never measured rather than printing blanks", () => {
@@ -96,7 +96,7 @@ describe("record as source code", () => {
     expect(html).toContain('<span style="font-size:20px;">23.00 D</span>');
     // The retina heading is plain and its eye label bold, as the clinic writes it.
     expect(html).toContain("<p>MAPEAMENTO RETINA:</p>");
-    expect(html).toContain("<p><strong>OD:&nbsp;</strong>MEIOS TRANSPARENTES ; RETINA APLICADA 360.</p>");
+    expect(html).toContain("<p><strong>OD:&nbsp;</strong>MEIOS TRANSPARENTES ; RETINA APLICADA 360 ;");
     expect(html).not.toMatch(/class=|<table|<div/);
   });
 

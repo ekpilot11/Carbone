@@ -74,7 +74,7 @@ export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchP
   // results land rather than waiting for the slowest photo.
   useEffect(() => {
     let cancelled = false;
-    const queue = createBatchItems(files, tRef.current.recordRetinaDefault);
+    const queue = createBatchItems(files);
     setItems(queue);
 
     void runWithConcurrency(queue, SCAN_CONCURRENCY, async (item) => {
@@ -143,14 +143,6 @@ export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchP
     };
   }, [files]);
 
-  function updateRetina(id: string, side: EyeSide, text: string) {
-    setItems((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, retina: { ...item.retina, [side]: text } } : item,
-      ),
-    );
-  }
-
   function updateField(id: string, side: EyeSide, field: keyof EyeRowState, value: string) {
     setItems((prev) =>
       prev.map((item) =>
@@ -212,7 +204,6 @@ export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchP
         aConstant:
           item.result.lens?.aConstant ?? (personal ? item.submitted.settings.aConstant : undefined),
       },
-      retina: item.retina,
       eyes: item.submitted.sides.map((side) => ({
         side,
         measurements: item.submitted!.rows[side],
@@ -313,7 +304,6 @@ export function BatchPanel({ t, lang, files, settings, kIndex, onClose }: BatchP
             item={item}
             onName={(name) => update(item.id, { patientName: name })}
             onField={(side, field, value) => updateField(item.id, side, field, value)}
-            onRetina={(side, text) => updateRetina(item.id, side, text)}
             onDownload={() => downloadOne(item)}
             onCopy={(asSource) => copyOne(item, asSource)}
           />
@@ -329,12 +319,11 @@ interface BatchRowProps {
   item: BatchItem;
   onName: (name: string) => void;
   onField: (side: EyeSide, field: keyof EyeRowState, value: string) => void;
-  onRetina: (side: EyeSide, text: string) => void;
   onDownload: () => void;
   onCopy: (asSource: boolean) => void;
 }
 
-function BatchRow({ t, index, item, onName, onField, onRetina, onDownload, onCopy }: BatchRowProps) {
+function BatchRow({ t, index, item, onName, onField, onDownload, onCopy }: BatchRowProps) {
   const statusLabel: Record<BatchItem["status"], string> = {
     scanning: t.batchStatusScanning,
     ready: t.batchStatusReady,
@@ -397,22 +386,6 @@ function BatchRow({ t, index, item, onName, onField, onRetina, onDownload, onCop
         </p>
       ))}
       {stale && <p className="batch-note">{t.batchStale}</p>}
-
-      {item.status !== "scanning" && (
-        <details className="batch-optional batch-retina">
-          <summary>{t.recordRetinaLabel}</summary>
-          {(["OD", "OS"] as const).map((side) => (
-            <label className="batch-field batch-retina-field" key={side}>
-              <span>{side === "OD" ? "OD" : t.eyeOs.startsWith("OS") ? "OS" : "OE"}</span>
-              <input
-                type="text"
-                value={item.retina?.[side] ?? ""}
-                onChange={(e) => onRetina(side, e.target.value)}
-              />
-            </label>
-          ))}
-        </details>
-      )}
 
       {item.status !== "scanning" && (
         <div className="batch-eyes">

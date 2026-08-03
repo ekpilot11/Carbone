@@ -36,7 +36,11 @@ interface EyeLines {
 interface RecordModel {
   opening: string;
   retinaHeading: string;
-  /** Fundus findings, as typed by the clinician — never assumed. */
+  /**
+   * The practice's standard fundus wording. It goes in as the starting
+   * point for a section the clinician edits in the hospital system itself —
+   * this app has no view of a retina and never claims to.
+   */
   retina: { label: string; text: string }[];
   biometryHeading: string;
   biometry: EyeLines[];
@@ -49,13 +53,10 @@ interface RecordModel {
 function buildModel(input: MedicalRecordInput): RecordModel {
   const t = STRINGS[input.lang];
 
-  const retina = (["OD", "OS"] as const)
-    .map((side) => ({ side, text: input.retina?.[side] }))
-    .filter((entry): entry is { side: "OD" | "OS"; text: string } => present(entry.text))
-    .map((entry) => ({
-      label: `${eyeLabel(input.lang, entry.side)}:`,
-      text: entry.text.trim(),
-    }));
+  const retina = (["OD", "OS"] as const).map((side) => ({
+    label: `${eyeLabel(input.lang, side)}:`,
+    text: t.recordRetinaDefault,
+  }));
 
   const biometry: EyeLines[] = [];
   const topography: EyeLines[] = [];
