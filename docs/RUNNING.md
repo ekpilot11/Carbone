@@ -43,8 +43,8 @@ knows about the programs you just installed):
 
 ```powershell
 cd $HOME
-git clone -b claude/eye-test-lens-calculator-d2ow2m https://github.com/ekpilot11/Carbone.git
-cd Carbone
+git clone -b claude/eye-test-lens-calculator-d2ow2m https://github.com/ekpilot11/LensCalc.git
+cd LensCalc
 ```
 
 ## 4. Put the API key in a file
@@ -164,9 +164,17 @@ Docker Desktop starts with Windows and the container restarts with it, so
 ## Updating
 
 ```powershell
-cd $HOME\Carbone
+cd $HOME\LensCalc
 git pull
 docker compose up -d --build
+```
+
+If `git pull` ever complains that the repository has moved, the project was
+renamed on GitHub and this clone still points at the old name. GitHub
+redirects for a while, but not forever:
+
+```powershell
+git remote set-url origin https://github.com/ekpilot11/LensCalc.git
 ```
 
 Then reload the browser with **Ctrl+Shift+R** — otherwise it may keep
