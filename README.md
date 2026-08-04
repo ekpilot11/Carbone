@@ -291,7 +291,9 @@ PC, and those two machines can't talk to each other. What they do share is
 the internet, so the app goes on a server both of them can open.
 
 It ships as **one container**: the server serves the built app as well as
-the API, so there is one port, one URL and no CORS to configure.
+the API, so there is one port, one URL and no CORS to configure. For a
+Windows machine with nothing installed yet, follow
+[`docs/RUNNING.md`](docs/RUNNING.md) — the whole thing, in order.
 
 ```bash
 docker compose up -d --build        # serves on port 80

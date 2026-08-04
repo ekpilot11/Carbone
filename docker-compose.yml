@@ -1,10 +1,11 @@
 services:
   lens:
     build: .
-    # Port 80 so the address is just the machine's hostname — easier to type
-    # on a phone, and easier to put a TLS proxy in front of later.
+    # Port 80 by default, so the address is just the machine's name. Set
+    # HOST_PORT in .env when something already holds 80 — common on a managed
+    # Windows machine, where IIS or another service may have claimed it.
     ports:
-      - "80:4000"
+      - "${HOST_PORT:-80}:4000"
     environment:
       # Enables photo scanning. Leave unset and photos are read on-device
       # instead (weaker, but nothing leaves the machine) — see the READMEs.
