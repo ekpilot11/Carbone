@@ -156,17 +156,67 @@ export async function collectHandoff(code: string): Promise<unknown> {
   return body.payload;
 }
 
+/** How often the app asks whether a calculation has finished. */
+const JOB_POLL_MS = 1500;
+
+/**
+ * Long enough for the three minutes a security check is allowed to wait,
+ * plus the run itself and some slack.
+ */
+const JOB_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * Runs a calculation without holding a connection open while it happens.
+ *
+ * The automation needs 10–30 seconds normally, and up to three minutes when
+ * the calculator's site raises a security check and waits for someone to
+ * complete it. A single request held open that long survives on localhost
+ * and nowhere else: a tunnel, a proxy or a firewall cuts it, and what comes
+ * back is the proxy's error page rather than a result — which is what a
+ * Cloudflare tunnel did, returning its own 502 after about a hundred
+ * seconds.
+ *
+ * So the server is asked to *start* a calculation, and then asked every
+ * couple of seconds how it went. Every exchange is short, which is the only
+ * thing anything in between cares about. The signature is unchanged, so
+ * callers neither know nor care.
+ */
 export async function calculateBarrett(payload: CalculateRequest): Promise<CalculateResponse> {
-  const res = await fetch(`${API_BASE}/api/calculate`, {
+  const started = await fetch(`${API_BASE}/api/calculate/jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  if (!started.ok) {
+    const body = await started.text().catch(() => "");
+    throw new Error(`Backend returned ${started.status}${body ? `: ${body}` : ""}`);
+  }
+  const { jobId } = (await started.json()) as { jobId?: string };
+  if (!jobId) throw new Error("The server did not start the calculation.");
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Backend returned ${res.status}${body ? `: ${body}` : ""}`);
+  const deadline = Date.now() + JOB_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, JOB_POLL_MS));
+
+    const res = await fetch(`${API_BASE}/api/calculate/jobs/${jobId}`);
+    if (!res.ok) {
+      // A poll that fails is not a failed calculation — a phone changing
+      // network, or a tunnel blinking, must not discard a run that is still
+      // going. Keep asking until the deadline.
+      if (res.status === 404) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? "The server lost track of that calculation.");
+      }
+      continue;
+    }
+
+    const job = (await res.json()) as { status: string; result?: CalculateResponse; error?: string };
+    if (job.status === "done" && job.result) return job.result;
+    if (job.status === "failed") throw new Error(job.error ?? "The calculation failed.");
   }
 
-  return res.json();
+  throw new Error(
+    "The calculation is taking longer than five minutes. It may still be running on the " +
+      "server — check the calculator site, or press Calculate again.",
+  );
 }

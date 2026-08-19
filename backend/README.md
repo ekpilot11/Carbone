@@ -179,7 +179,20 @@ point of the persistent profile.
 
 ## Endpoints
 
-- `POST /api/calculate` — body: `{ od?: EyeInput, os?: EyeInput }`, at
+- `POST /api/calculate/jobs` — **what the app uses.** Same body as
+  `/api/calculate`; returns `202 {jobId}` at once and runs the calculation
+  in the background. `GET /api/calculate/jobs/:jobId` then answers
+  `{status: "running" | "done" | "failed", result?, error?}`.
+
+  This exists because a run can take minutes — up to three of them when the
+  site raises a security check and waits for a person — and nothing between
+  a browser and this server will hold a request open that long. A Cloudflare
+  tunnel gave up at about a hundred seconds and returned its own 502 page,
+  which the app then displayed as if the backend had said it. Every exchange
+  is now short. Results are kept in memory for ten minutes, then forgotten.
+- `POST /api/calculate` — the same calculation, synchronously, kept for
+  same-origin use (localhost, curl, the mock scripts) where holding the
+  connection open is harmless. Body: `{ od?: EyeInput, os?: EyeInput }`, at
   least one eye required; a single eye calculates that side only (see
   `src/types.ts`). In single-eye runs the "Recommended IOL" match maps to
   the requested side, and the uncalculated side's table comes back empty.

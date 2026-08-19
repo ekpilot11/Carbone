@@ -189,6 +189,7 @@ showing the page it had cached.
 | `ps` says `Restarting` | It's crash-looping. The logs name the reason. |
 | Port 80 conflict on `up` | Set `HOST_PORT=8080` in `.env`, run `docker compose up -d` again. |
 | The tunnel says *unable to reach the origin service* | The tunnel is fine; the app behind it isn't. Check `http://localhost` first. |
+| A **502 Bad gateway** page appearing inside the app | Cloudflare gave up waiting. Calculations no longer hold a connection open, so this should not happen — if it does, `http://localhost` on the PC bypasses the tunnel entirely. |
 | Changes don't appear after `git pull` | Ctrl+Shift+R. If that fails, `docker compose build --no-cache` then `docker compose up -d`. |
 
 ## What this setup still doesn't have

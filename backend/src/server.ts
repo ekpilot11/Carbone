@@ -11,6 +11,7 @@ import {
   fetchLensOptions,
   runBarrettCalculation,
 } from "./barrett.js";
+import { clearJobs, readJob, startCalculation } from "./calcJobs.js";
 import { clearHandoffs, collectHandoff, parkHandoff } from "./handoff.js";
 import { scanImage, visionConfigured } from "./scan.js";
 import type { CalculateRequest } from "./types.js";
@@ -71,6 +72,11 @@ app.post("/api/scan", async (req, res) => {
   }
 });
 
+/**
+ * The synchronous calculation, kept for same-origin use (localhost, curl,
+ * the offline mock scripts) where holding the connection open is harmless.
+ * Anything reached through a proxy should use the job routes below instead.
+ */
 app.post("/api/calculate", async (req, res) => {
   const validationError = validateCalculateRequest(req.body);
   if (validationError) {
@@ -91,6 +97,37 @@ app.post("/api/calculate", async (req, res) => {
         " Use the app's manual fallback (copy values, open calculator manually) instead.",
     });
   }
+});
+
+/**
+ * The same calculation, as a job.
+ *
+ * This is what the app actually uses. A run can take minutes when the
+ * calculator's site raises a security check, and nothing between the browser
+ * and this server — tunnel, proxy, firewall — will hold a request open that
+ * long. Starting a job returns at once, and the app asks for the outcome
+ * every couple of seconds. See calcJobs.ts.
+ */
+app.post("/api/calculate/jobs", (req, res) => {
+  const validationError = validateCalculateRequest(req.body);
+  if (validationError) {
+    res.status(400).json({ error: validationError });
+    return;
+  }
+  res.status(202).json({ jobId: startCalculation(req.body as CalculateRequest) });
+});
+
+app.get("/api/calculate/jobs/:jobId", (req, res) => {
+  const job = readJob(req.params.jobId);
+  if (!job) {
+    res.status(404).json({
+      error:
+        "That calculation is no longer on the server — results are kept for a few minutes. " +
+        "Press Calculate again.",
+    });
+    return;
+  }
+  res.json(job);
 });
 
 // The lens names the live calculator offers, so the frontend's dropdown can
@@ -205,6 +242,7 @@ if (existsSync(frontendDist)) {
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     clearHandoffs();
+    clearJobs();
     void closeSharedBrowser().finally(() => process.exit(0));
   });
 }
