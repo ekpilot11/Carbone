@@ -149,24 +149,34 @@ If the calculator site asks for a security check, it appears **inside the
 app**, wherever you are. Tick "Verify you are human" and the calculation
 carries on. The clearance is remembered afterwards.
 
-## Every day after that
+## Every day after that: one double-click
 
-Nothing, except the tunnel:
+**`Start Lens.cmd`**, in the project folder. It does the whole routine in
+order: starts Docker Desktop if it isn't running and waits for the engine,
+fetches the latest version, rebuilds, waits until the app genuinely answers,
+opens it in the browser, then opens the tunnel and prints the phone address —
+copying it to the clipboard as it goes.
 
-```powershell
-cloudflared tunnel --url http://127.0.0.1:80
-```
+Leave that window open while you work. Closing it stops only the phone
+address; the app itself keeps running, and this computer can still use
+`http://localhost`.
 
-Docker Desktop starts with Windows and the container restarts with it, so
-`http://localhost` is simply there. Confirm any time with
-`docker compose ps`.
+**Put it on the desktop:** right-click `Start Lens.cmd` → **Show more
+options** → **Send to** → **Desktop (create shortcut)**. Right-click the
+shortcut → Properties → Change Icon if you want it to look like an app.
 
-## Updating
+The script explains itself when a step fails, and it is plain text —
+`scripts/start-lens.ps1` — so it can be read and edited.
+
+### Doing it by hand
+
+Same thing, if you'd rather see each step:
 
 ```powershell
 cd $HOME\LensCalc
 git pull
 docker compose up -d --build
+cloudflared tunnel --url http://127.0.0.1:80
 ```
 
 If `git pull` ever complains that the repository has moved, the project was
@@ -177,8 +187,8 @@ redirects for a while, but not forever:
 git remote set-url origin https://github.com/ekpilot11/LensCalc.git
 ```
 
-Then reload the browser with **Ctrl+Shift+R** — otherwise it may keep
-showing the page it had cached.
+After an update, reload the browser with **Ctrl+Shift+R** — otherwise it may
+keep showing the page it had cached.
 
 ## When something is wrong
 

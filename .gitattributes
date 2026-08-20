@@ -7,3 +7,9 @@
 *.sh text eol=lf
 Dockerfile text eol=lf
 docker-compose.yml text eol=lf
+
+# The other way round: Windows batch files need CRLF, and a .cmd checked out
+# with Unix endings can fail in ways as obscure as the shebang problem above.
+# PowerShell is happy either way; pinned for consistency with its launcher.
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
