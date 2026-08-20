@@ -60,11 +60,17 @@ const en = {
 
   reviewTitle: "2. Review & complete",
   reviewHint:
-    "Check every value read from the photo. The printout doesn't label which K is which, so K1 is always the lower of the two values (swapped automatically if entered the other way round). Refraction target defaults to 0 (emmetropia) — change it only when the plan differs. The Optional: fields are never read from the photo; type them in if you have them. To calculate a single eye, fill in only that eye — use \"Clear\" to empty the other one.",
+    "Check every value read from the photo. K1 must be the lower of the two values — the flatter meridian. If it isn't, that eye is held back rather than corrected for you: a reversed pair is a transcription error, and which value is wrong isn't something the app can know. Refraction target defaults to 0 (emmetropia) — change it only when the plan differs. The Optional: fields are never read from the photo; type them in if you have them. To calculate a single eye, fill in only that eye — use \"Clear\" to empty the other one.",
   lensLabel: "Lens",
   fieldLensFactor: "Lens Factor",
   fieldAConstant: "A Constant",
   kIndexLabel: "K Index",
+  kOrderWarning: (side: string, k1: string, k2: string) =>
+    `⚠ ${side}: K1 (${k1}) is above K2 (${k2}). K1 is the flatter meridian, so this pair is the wrong way round or mistyped — that eye will not be calculated until it is corrected.`,
+  planSuspect: (sides: string) =>
+    `${sides} left out: K1 is above K2, which cannot be a real cornea. Correct the values to include it.`,
+  batchSuspectCount: (count: number) =>
+    `⚠ ${count} row${count === 1 ? "" : "s"} with K1 above K2 — not calculated until corrected.`,
   kIndexHint: (defaultIndex: string) =>
     `The keratometric index the calculator reads your K values against. Leave it on ${defaultIndex} unless your keratometer reports against the other one — changing it changes every power returned.`,
   lensPersonalNote: (model: string) =>
@@ -114,6 +120,10 @@ const en = {
     `These have no eye with all four measurements, so there is nothing to calculate for them: ${names}.`,
   listDiscardedEye: (side: string, missing: string) =>
     `${side} was left out of the list — no ${missing}.`,
+  listSuspectEye: (side: string, k1: string, k2: string) =>
+    `${side} was NOT imported: the list has K1 ${k1} above K2 ${k2}, which cannot be right — K1 is the flatter meridian. Check the source and type both values in.`,
+  listSuspectCount: (count: number) =>
+    `⚠ ${count} eye${count === 1 ? " has" : "s have"} K1 above K2 in the list — a transcription error, not a measurement. Those values were not imported; each row says which eye.`,
   listNoPatients: "That sheet has the right headings but no patient rows under them.",
   listFailed: "Couldn't read that file.",
 
@@ -279,11 +289,17 @@ const pt: Strings = {
 
   reviewTitle: "2. Revise e complete",
   reviewHint:
-    "Confira cada valor lido da foto. O impresso não indica qual K é qual, então K1 é sempre o menor dos dois valores (trocados automaticamente se digitados ao contrário). A refração alvo vem como 0 (emetropia) — altere apenas se o plano for outro. Os campos de Opcional: nunca são lidos da foto; digite-os se tiver os valores. Para calcular um olho só, preencha apenas esse olho — use \"Limpar\" para esvaziar o outro.",
+    "Confira cada valor lido da foto. K1 tem de ser o menor dos dois valores — o meridiano mais plano. Se não for, aquele olho fica retido em vez de ser corrigido sozinho: um par invertido é erro de transcrição, e qual dos valores está errado não é algo que o app possa saber. A refração alvo vem como 0 (emetropia) — altere apenas se o plano for outro. Os campos de Opcional: nunca são lidos da foto; digite-os se tiver os valores. Para calcular um olho só, preencha apenas esse olho — use \"Limpar\" para esvaziar o outro.",
   lensLabel: "Lente",
   fieldLensFactor: "Lens Factor",
   fieldAConstant: "Constante A",
   kIndexLabel: "Índice K",
+  kOrderWarning: (side: string, k1: string, k2: string) =>
+    `⚠ ${side}: K1 (${k1}) está acima de K2 (${k2}). K1 é o meridiano mais plano, então esse par está invertido ou digitado errado — esse olho não será calculado até ser corrigido.`,
+  planSuspect: (sides: string) =>
+    `${sides} ficou de fora: K1 está acima de K2, o que não existe numa córnea real. Corrija os valores para incluí-lo.`,
+  batchSuspectCount: (count: number) =>
+    `⚠ ${count} linha${count === 1 ? "" : "s"} com K1 acima de K2 — não calculadas até serem corrigidas.`,
   kIndexHint: (defaultIndex: string) =>
     `O índice ceratométrico com que a calculadora lê seus valores de K. Mantenha em ${defaultIndex}, a menos que seu ceratômetro use o outro — alterá-lo muda todos os poderes calculados.`,
   lensPersonalNote: (model: string) =>
@@ -333,6 +349,10 @@ const pt: Strings = {
     `Estes não têm nenhum olho com as quatro medidas, então não há o que calcular para eles: ${names}.`,
   listDiscardedEye: (side: string, missing: string) =>
     `${side} ficou de fora da lista — sem ${missing}.`,
+  listSuspectEye: (side: string, k1: string, k2: string) =>
+    `${side} NÃO foi importado: a lista traz K1 ${k1} acima de K2 ${k2}, o que não pode estar certo — K1 é o meridiano mais plano. Confira a origem e digite os dois valores.`,
+  listSuspectCount: (count: number) =>
+    `⚠ ${count} olho${count === 1 ? "" : "s"} com K1 acima de K2 na lista — erro de transcrição, não medida. Esses valores não foram importados; cada linha indica qual olho.`,
   listNoPatients: "Essa planilha tem os cabeçalhos certos, mas nenhuma linha de paciente abaixo deles.",
   listFailed: "Não foi possível ler esse arquivo.",
 

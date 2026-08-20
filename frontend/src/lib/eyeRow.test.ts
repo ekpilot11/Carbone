@@ -7,6 +7,8 @@ import {
   formatRowForClipboard,
   isRowComplete,
   isRowEmpty,
+  isRowUsable,
+  kOrderSuspect,
   missingFields,
   planCalculation,
   toEyeInput,
@@ -94,11 +96,16 @@ describe("eyeRow helpers", () => {
     });
   });
 
-  it("swaps hand-entered K values so K1 is always the lower one", () => {
+  /**
+   * The reverse of what this used to do. Swapping a labelled pair hides a
+   * transcription error behind a plausible-looking result; such an eye is
+   * refused upstream instead, and anything reaching here has been checked.
+   */
+  it("sends K values exactly as they stand, without reordering them", () => {
     const row = {
       ...emptyRow("OD"),
-      k1: "45.06",
-      k2: "44.16",
+      k1: "44.16",
+      k2: "45.06",
       axialLength: "22.98",
       acd: "2.79",
       targetRefraction: "0",
@@ -160,6 +167,7 @@ describe("planCalculation", () => {
       ok: true,
       sides: ["OD", "OS"],
       skipped: [],
+      suspect: [],
     });
   });
 
@@ -168,12 +176,13 @@ describe("planCalculation", () => {
       ok: true,
       sides: ["OD"],
       skipped: [],
+      suspect: [],
     });
   });
 
   it("refuses when no eye is filled", () => {
     const plan = planCalculation(emptyRow("OD"), emptyRow("OS"));
-    expect(plan).toEqual({ ok: false, reason: "empty", skipped: [] });
+    expect(plan).toEqual({ ok: false, reason: "empty", skipped: [], suspect: [] });
   });
 
   /**
@@ -183,19 +192,59 @@ describe("planCalculation", () => {
    * the other one must still calculate.
    */
   it("leaves a half-read eye out and calculates the other", () => {
-    const halfOd = { ...emptyRow("OD"), k1: "42.70", k2: "37.73" };
+    const halfOd = { ...emptyRow("OD"), k1: "37.73", k2: "42.70" };
     const plan = planCalculation(halfOd, COMPLETE_OS);
-    expect(plan).toEqual({ ok: true, sides: ["OS"], skipped: ["OD"] });
+    expect(plan).toEqual({ ok: true, sides: ["OS"], skipped: ["OD"], suspect: [] });
   });
 
   it("names exactly what a half-read eye is missing", () => {
-    const halfOd = { ...emptyRow("OD"), k1: "42.70", k2: "37.73" };
+    const halfOd = { ...emptyRow("OD"), k1: "37.73", k2: "42.70" };
     expect(missingFields(halfOd)).toEqual(["axialLength", "acd"]);
     expect(missingFields(COMPLETE_OD)).toEqual([]);
   });
 
   it("refuses, naming the gap, when neither eye is complete", () => {
     const plan = planCalculation({ ...emptyRow("OD"), k1: "42.70" }, emptyRow("OS"));
-    expect(plan).toEqual({ ok: false, reason: "nothingComplete", skipped: ["OD"] });
+    expect(plan).toEqual({ ok: false, reason: "nothingComplete", skipped: ["OD"], suspect: [] });
+  });
+});
+
+/**
+ * A labelled K pair in the wrong order is a transcription error, not a
+ * cornea. Nothing in the numbers says which of the two is wrong — or whether
+ * they came from different eyes — so the eye waits for a person rather than
+ * being reordered into something that calculates cleanly.
+ */
+describe("K1 above K2", () => {
+  const reversed = { ...COMPLETE_OD, k1: "45.06", k2: "44.16" };
+
+  it("is flagged, and only when K1 is strictly the larger", () => {
+    expect(kOrderSuspect(reversed)).toBe(true);
+    expect(kOrderSuspect(COMPLETE_OD)).toBe(false);
+    // A spherical cornea is real; equal values are not an error.
+    expect(kOrderSuspect({ ...COMPLETE_OD, k1: "44.16", k2: "44.16" })).toBe(false);
+  });
+
+  it("is not flagged while the pair is still being typed", () => {
+    expect(kOrderSuspect({ ...emptyRow("OD"), k1: "45.06" })).toBe(false);
+    expect(kOrderSuspect({ ...emptyRow("OD"), k2: "44.16" })).toBe(false);
+  });
+
+  it("makes an otherwise complete eye unusable", () => {
+    expect(isRowComplete(reversed)).toBe(true);
+    expect(isRowUsable(reversed)).toBe(false);
+  });
+
+  it("keeps that eye out of the calculation and names it", () => {
+    const plan = planCalculation(reversed, COMPLETE_OS);
+    expect(plan).toEqual({ ok: true, sides: ["OS"], skipped: [], suspect: ["OD"] });
+  });
+
+  it("stops the calculation entirely when it is the only eye", () => {
+    const plan = planCalculation(reversed, emptyRow("OS"));
+    expect(plan.ok).toBe(false);
+    expect(plan.suspect).toEqual(["OD"]);
+    // Not "empty": there are values, and they are wrong.
+    expect(plan.ok === false && plan.reason).toBe("nothingComplete");
   });
 });

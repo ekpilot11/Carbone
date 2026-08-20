@@ -3,10 +3,12 @@ import {
   emptyRow,
   isRowComplete,
   isRowEmpty,
+  isRowUsable,
+  kOrderSuspect,
   type EyeRowState,
   type LensSettings,
 } from "./eyeRow";
-import type { ImportedPatient } from "./patientList";
+import type { EyeProblem, ImportedPatient } from "./patientList";
 import type { EyeSide } from "./types";
 
 /**
@@ -168,7 +170,7 @@ export function singlePatientItem(input: {
  */
 export function itemsFromPatients(
   patients: ImportedPatient[],
-  describeDiscarded: (side: EyeSide, missing: string) => string,
+  describe: (problem: EyeProblem) => string,
 ): BatchItem[] {
   return patients.map((patient, index) => ({
     id: `list-${index}-${patient.name}`,
@@ -178,10 +180,7 @@ export function itemsFromPatients(
     status: "ready",
     patientName: patient.name,
     rows: patient.rows,
-    note:
-      patient.discarded
-        .map((eye) => describeDiscarded(eye.side, eye.missing.join(", ")))
-        .join(" ") || undefined,
+    note: patient.problems.map(describe).join(" ") || undefined,
   }));
 }
 
@@ -202,9 +201,19 @@ export function createBatchItems(files: File[]): BatchItem[] {
   }));
 }
 
-/** An item is calculable when at least one eye is complete and none is half-filled. */
+/** An item is calculable when at least one eye is complete and self-consistent. */
 export function itemSides(item: BatchItem): EyeSide[] {
-  return (["OD", "OS"] as const).filter((side) => isRowComplete(item.rows[side]));
+  return (["OD", "OS"] as const).filter((side) => isRowUsable(item.rows[side]));
+}
+
+/**
+ * Eyes whose K values contradict each other (K1 above K2). Held back like a
+ * half-filled eye, but for a different reason and with a different remedy:
+ * these values exist and are wrong, so they need checking against the source
+ * rather than completing.
+ */
+export function suspectSides(item: BatchItem): EyeSide[] {
+  return (["OD", "OS"] as const).filter((side) => kOrderSuspect(item.rows[side]));
 }
 
 export function isItemCalculable(item: BatchItem): boolean {
@@ -240,6 +249,8 @@ export interface BatchCounts {
   incomplete: number;
   /** Calculated, then edited — the shown result no longer matches the values. */
   stale: number;
+  /** Rows with a K1/K2 pair in an impossible order, waiting to be checked. */
+  suspect: number;
 }
 
 export function countBatch(items: BatchItem[]): BatchCounts {
@@ -252,10 +263,12 @@ export function countBatch(items: BatchItem[]): BatchCounts {
     failed: 0,
     incomplete: 0,
     stale: 0,
+    suspect: 0,
   };
   for (const item of items) {
     counts[item.status]++;
     if (item.status === "ready" && !isItemCalculable(item)) counts.incomplete++;
+    if (suspectSides(item).length > 0) counts.suspect++;
     if (item.status === "done" && isStale(item)) counts.stale++;
   }
   return counts;

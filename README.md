@@ -164,19 +164,36 @@ list is a working document:
 - **Not-measured markers** — `n/e`, `n/a`, `-` and blanks all mean the same:
   no value.
 - **`OE`** is the left eye, which the calculator calls OS.
-- **K1 is the lower K**, as everywhere else here. The list isn't consistent
-  about which column holds which, so they are ordered on import.
+- **K1 above K2 is refused, not reordered** — see below.
 - The list carries no refraction target, so each eye starts at **plano (0)**,
   editable like any other field.
+
+**K1 above K2 is a mistake, not a measurement.** K1 is the flatter meridian
+by definition, so a row where it holds the larger number is a transcription
+error — a swapped pair, a typo, or two values from different eyes. Nothing
+in the numbers says which, so that eye is **not imported**, and the row
+quotes both values back for you to check against the source and type in.
+This is not hypothetical: the practice's own 58-patient list contains seven
+such pairs across four patients, all of which would previously have been
+silently reordered and calculated.
+
+The same rule applies wherever K values come from. The app used to swap a
+reversed pair on its way to the calculator — including values typed by hand
+— which produced a confident IOL power from numbers nobody had checked. Now
+an eye whose K1 exceeds its K2 is held back with a caution until it is
+corrected. (Reading two *unlabelled* numbers off a photographed printout is
+different: deciding which is K1 there is labelling, not correction, and the
+scan still does it.)
 
 **An eye is all four measurements or none.** Missing any one of them and the
 whole eye is discarded rather than half-imported — a partly filled eye is
 the one thing the calculator rejects, and importing three of four values
 invites someone to complete it from memory. The row says which eye went and
 what it lacked, patients with no usable eye are named on import, and nothing
-is dropped silently. Reading the practice's own 58-patient list gives 53
-patients with at least one calculable eye, 14 eyes discarded, and the 5
-patients with nothing usable named — matching the sheet's own notes.
+is dropped silently. Reading the practice's own 58-patient list gives 49
+patients with at least one calculable eye: 14 eyes discarded for missing
+measurements, 7 refused for reversed K values, and the 9 patients left with
+nothing usable named on import.
 
 The file is read **entirely in the browser** (no spreadsheet library — a
 small ZIP/XML reader, like the PDF writer); nothing is uploaded.

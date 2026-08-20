@@ -15,6 +15,7 @@ import {
   isStale,
   itemSides,
   partialSides,
+  suspectSides,
   runWithConcurrency,
   SCAN_CONCURRENCY,
   toPortableBatch,
@@ -296,6 +297,7 @@ export function BatchPanel({
         {counts.incomplete > 0 && ` ${t.batchIncomplete(counts.incomplete)}`}
         {counts.stale > 0 && ` ${t.batchStaleCount(counts.stale)}`}
       </p>
+      {counts.suspect > 0 && <p className="warning-box">{t.batchSuspectCount(counts.suspect)}</p>}
 
       <div className="batch-actions">
         <button type="button" onClick={calculateAll} disabled={calculating || calculable === 0}>
@@ -397,6 +399,9 @@ function BatchRow({ t, index, item, onName, onField, onDownload, onCopy }: Batch
 
   const recommended = item.result?.recommended;
   const partial = partialSides(item);
+  // Present but contradictory: shown apart from the "still missing" notes,
+  // because the remedy is different — check the source, don't fill a gap.
+  const suspect = suspectSides(item);
   const stale = isStale(item);
   const fieldLabels: Record<ReturnType<typeof missingFields>[number], string> = {
     axialLength: t.fieldAxialLength,
@@ -426,6 +431,15 @@ function BatchRow({ t, index, item, onName, onField, onDownload, onCopy }: Batch
 
       {item.error && <p className="batch-error">{item.error}</p>}
       {item.note && <p className="batch-note">{item.note}</p>}
+      {suspect.map((side) => (
+        <p className="warning-box" key={`k-${side}`}>
+          {t.kOrderWarning(
+            side === "OD" ? t.eyeOd : t.eyeOs,
+            item.rows[side].k1,
+            item.rows[side].k2,
+          )}
+        </p>
+      ))}
       {partial.map((side) => (
         <p className="batch-note" key={side}>
           {t.batchPartialEye(

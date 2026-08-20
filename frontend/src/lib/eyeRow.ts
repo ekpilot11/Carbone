@@ -66,6 +66,27 @@ export function isRowEmpty(row: EyeRowState): boolean {
   );
 }
 
+/**
+ * True when this eye's K values are in an impossible order.
+ *
+ * K1 is the flatter meridian by definition, so K1 greater than K2 is not a
+ * finding — it is a typo, a swapped pair, or two values that came from
+ * different eyes. Whichever it is, nobody can tell from the numbers alone,
+ * so the eye is held back for a person rather than reordered into something
+ * that looks plausible. Equal values are fine: a spherical cornea is real.
+ */
+export function kOrderSuspect(row: EyeRowState): boolean {
+  const k1 = Number(row.k1);
+  const k2 = Number(row.k2);
+  if (row.k1.trim() === "" || row.k2.trim() === "") return false;
+  return Number.isFinite(k1) && Number.isFinite(k2) && k1 > k2;
+}
+
+/** Complete, and not contradicting itself — what an eye needs to be sent. */
+export function isRowUsable(row: EyeRowState): boolean {
+  return isRowComplete(row) && !kOrderSuspect(row);
+}
+
 /** The values the calculator needs before it will accept an eye. */
 export const REQUIRED_FIELDS = ["axialLength", "k1", "k2", "acd", "targetRefraction"] as const;
 export type RequiredField = (typeof REQUIRED_FIELDS)[number];
@@ -79,8 +100,8 @@ export function missingFields(row: EyeRowState): RequiredField[] {
 export type PlanProblem = "empty" | "nothingComplete";
 
 export type CalculationPlan =
-  | { ok: true; sides: EyeSide[]; skipped: EyeSide[] }
-  | { ok: false; reason: PlanProblem; skipped: EyeSide[] };
+  | { ok: true; sides: EyeSide[]; skipped: EyeSide[]; suspect: EyeSide[] }
+  | { ok: false; reason: PlanProblem; skipped: EyeSide[]; suspect: EyeSide[] };
 
 /**
  * Decides which eyes go to the calculator.
@@ -93,14 +114,22 @@ export type CalculationPlan =
  */
 export function planCalculation(od: EyeRowState, os: EyeRowState): CalculationPlan {
   const rows: Record<EyeSide, EyeRowState> = { OD: od, OS: os };
-  const sides = (["OD", "OS"] as const).filter((side) => isRowComplete(rows[side]));
+  const sides = (["OD", "OS"] as const).filter((side) => isRowUsable(rows[side]));
   // "Skipped" means started but unfinished; an untouched eye is simply absent.
   const skipped = (["OD", "OS"] as const).filter(
     (side) => !isRowEmpty(rows[side]) && !isRowComplete(rows[side]),
   );
+  // Complete, but the K values contradict themselves — held back for a
+  // person, and named so it is obvious why nothing happened.
+  const suspect = (["OD", "OS"] as const).filter((side) => kOrderSuspect(rows[side]));
 
-  if (sides.length > 0) return { ok: true, sides, skipped };
-  return { ok: false, reason: skipped.length > 0 ? "nothingComplete" : "empty", skipped };
+  if (sides.length > 0) return { ok: true, sides, skipped, suspect };
+  return {
+    ok: false,
+    reason: skipped.length > 0 || suspect.length > 0 ? "nothingComplete" : "empty",
+    skipped,
+    suspect,
+  };
 }
 
 function optionalNumber(value: string): number | undefined {
@@ -115,17 +144,23 @@ export interface LensSettings {
 }
 
 /**
- * Applies the K1-is-lower convention even to hand-edited values: if the
- * clinician typed them the other way round, they're swapped rather than
- * sent through mislabeled.
+ * Sends the K values exactly as they stand.
+ *
+ * This used to quietly swap them when K1 came in higher than K2. That looks
+ * like tidiness and is actually the opposite: a labelled pair in the wrong
+ * order is a transcription error, and silently reordering it produces a
+ * confident IOL power from numbers nobody has checked. K1 > K2 is now
+ * refused upstream (see `kOrderSuspect`) and corrected by a person, so
+ * anything reaching here has already been looked at.
+ *
+ * Reading two unlabelled numbers off a photographed printout is a different
+ * matter — deciding which is K1 there is labelling, not correction, and the
+ * scan path still does it.
  */
 export function toEyeInput(row: EyeRowState, settings: LensSettings): EyeInput {
-  const kValues = [Number(row.k1), Number(row.k2)];
-  const k1 = Math.min(...kValues);
-  const k2 = Math.max(...kValues);
   return {
     side: row.side,
-    keratometry: { k1, k2 },
+    keratometry: { k1: Number(row.k1), k2: Number(row.k2) },
     biometry: {
       axialLength: Number(row.axialLength),
       acd: Number(row.acd),

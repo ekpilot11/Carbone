@@ -22,22 +22,34 @@ import type { Grid } from "./xlsx";
  *   and the whole eye is discarded rather than half-imported — a half-filled
  *   eye is the one thing the calculator would reject, and a partially
  *   imported eye invites someone to top it up from memory.
- * - **K1 is the lower K**, as everywhere else in this app. The list is not
- *   consistent about which column holds which, so they are ordered here.
+ * - **K1 above K2 is a mistake, not a measurement.** K1 is the flatter
+ *   meridian by definition, so a row where it is the larger number is a
+ *   typo, a swapped pair, or two values from different eyes — and nothing
+ *   in the numbers says which. That eye is refused and reported, for a
+ *   person to check against the source and type in. Quietly reordering it
+ *   would turn a visible error into a confident IOL power.
  */
+
+/** Why an eye from the list can't be used as it stands. */
+export type EyeProblem =
+  | { side: EyeSide; kind: "incomplete"; missing: string[] }
+  | { side: EyeSide; kind: "kOrder"; k1: string; k2: string };
 
 export interface ImportedPatient {
   name: string;
   rows: Record<EyeSide, EyeRowState>;
-  /** Eyes that were dropped for being incomplete, with what they lacked. */
-  discarded: { side: EyeSide; missing: string[] }[];
+  /** Eyes the list couldn't supply usably, and why. Never silent. */
+  problems: EyeProblem[];
 }
 
 export interface ImportedList {
   patients: ImportedPatient[];
   /** Patients with no usable eye at all — listed so they aren't lost silently. */
   withoutUsableEye: string[];
+  /** Eyes left out for missing measurements. */
   discardedEyes: number;
+  /** Eyes left out because K1 was above K2 — these need checking, not typing. */
+  suspectEyes: number;
 }
 
 /** Column headings this recognises, loosest match last. */
@@ -143,7 +155,7 @@ export function readPatientList(grid: Grid): ImportedList {
       patient = {
         name: currentName,
         rows: { OD: emptyRow("OD"), OS: emptyRow("OS") },
-        discarded: [],
+        problems: [],
       };
       byName.set(currentName, patient);
       patients.push(patient);
@@ -156,26 +168,43 @@ export function readPatientList(grid: Grid): ImportedList {
     if (missing.length > 0) {
       // Discarded, not half-imported: this eye stays exactly as empty as an
       // eye that was never measured.
-      patient.discarded.push({ side, missing: missing.map((field) => FIELD_LABELS[field]) });
+      patient.problems.push({
+        side,
+        kind: "incomplete",
+        missing: missing.map((field) => FIELD_LABELS[field]),
+      });
       continue;
     }
 
-    // K1 is the lower of the two, whichever column the list put it in.
-    const [lower, higher] = [Number(values.k1), Number(values.k2)].sort((a, b) => a - b);
+    // K1 above K2 cannot be a real cornea. Refused rather than reordered:
+    // whether the pair was swapped, mistyped or copied from the wrong eye is
+    // not decidable here, and each of those is a different wrong answer.
+    if (Number(values.k1) > Number(values.k2)) {
+      patient.problems.push({ side, kind: "kOrder", k1: values.k1!, k2: values.k2! });
+      continue;
+    }
+
     patient.rows[side] = {
       ...emptyRow(side),
       axialLength: values.axialLength!,
       acd: values.acd!,
-      k1: lower.toFixed(2),
-      k2: higher.toFixed(2),
+      k1: values.k1!,
+      k2: values.k2!,
     };
   }
+
+  const count = (kind: EyeProblem["kind"]) =>
+    patients.reduce(
+      (total, patient) => total + patient.problems.filter((problem) => problem.kind === kind).length,
+      0,
+    );
 
   return {
     patients,
     withoutUsableEye: patients
       .filter((patient) => !isRowComplete(patient.rows.OD) && !isRowComplete(patient.rows.OS))
       .map((patient) => patient.name),
-    discardedEyes: patients.reduce((total, patient) => total + patient.discarded.length, 0),
+    discardedEyes: count("incomplete"),
+    suspectEyes: count("kOrder"),
   };
 }

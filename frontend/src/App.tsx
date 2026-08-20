@@ -386,9 +386,14 @@ function App() {
   const skippedNotes = plan.skipped.map((side) =>
     t.planSkipped(side === "OD" ? t.eyeOd : t.eyeOs, missingFor(side)),
   );
+  // An eye whose K1 is above K2 is held back like a half-filled one, but
+  // says so in its own words: those values are present and wrong.
+  const suspectNotes = plan.suspect.map((side) =>
+    t.kOrderWarning(side === "OD" ? t.eyeOd : t.eyeOs, rows[side].k1, rows[side].k2),
+  );
   const planProblem = !plan.ok
     ? plan.reason === "nothingComplete"
-      ? skippedNotes.join(" ")
+      ? [...suspectNotes, ...skippedNotes].join(" ")
       : t.planEmpty
     : constantsProblem;
   const canCalculate = plan.ok && constantsProblem === null;
@@ -442,13 +447,20 @@ function App() {
         return;
       }
 
-      setRestoredBatch(itemsFromPatients(list.patients, t.listDiscardedEye));
+      setRestoredBatch(
+        itemsFromPatients(list.patients, (problem) =>
+          problem.kind === "incomplete"
+            ? t.listDiscardedEye(problem.side, problem.missing.join(", "))
+            : t.listSuspectEye(problem.side, problem.k1, problem.k2),
+        ),
+      );
       setBatchFiles(null);
       setResult(null);
       setSubmitted(null);
       setListMessage(
         [
           t.listImported(list.patients.length),
+          list.suspectEyes > 0 ? t.listSuspectCount(list.suspectEyes) : null,
           list.discardedEyes > 0 ? t.listDiscardedCount(list.discardedEyes) : null,
           list.withoutUsableEye.length > 0
             ? t.listNothingUsable(list.withoutUsableEye.join(", "))
@@ -802,6 +814,9 @@ function App() {
           {t.handoffSend}
         </button>
         {planProblem && <p className="hint">{planProblem}</p>}
+        {plan.ok && suspectNotes.length > 0 && (
+          <p className="warning-box">{suspectNotes.join(" ")}</p>
+        )}
         {plan.ok && skippedNotes.length > 0 && (
           <p className="scan-message">{skippedNotes.join(" ")}</p>
         )}

@@ -8,8 +8,10 @@ import {
   isStale,
   itemSides,
   partialSides,
+  itemsFromPatients,
   runWithConcurrency,
   singlePatientItem,
+  suspectSides,
   toPortableBatch,
   type BatchItem,
 } from "./batch";
@@ -230,5 +232,59 @@ describe("handing over a single patient", () => {
     expect(
       hasWorkToHandOff({ OD: { ...emptyRow("OD"), k1: "44.16" }, OS: emptyRow("OS") }),
     ).toBe(true);
+  });
+});
+
+describe("a row whose K values contradict each other", () => {
+  const reversed = item({
+    id: "k",
+    rows: {
+      OD: { ...emptyRow("OD"), ...COMPLETE, k1: "45.06", k2: "44.16" },
+      OS: { ...emptyRow("OS"), ...COMPLETE },
+    },
+  });
+
+  it("is left out of the calculation even though every field is filled", () => {
+    expect(itemSides(reversed)).toEqual(["OS"]);
+    expect(suspectSides(reversed)).toEqual(["OD"]);
+  });
+
+  it("is counted, so a long list says how many need checking", () => {
+    expect(countBatch([reversed]).suspect).toBe(1);
+  });
+
+  it("stops the row calculating at all when it is the only eye", () => {
+    const onlyEye = item({
+      id: "only",
+      rows: {
+        OD: { ...emptyRow("OD"), ...COMPLETE, k1: "45.06", k2: "44.16" },
+        OS: emptyRow("OS"),
+      },
+    });
+    expect(isItemCalculable(onlyEye)).toBe(false);
+  });
+});
+
+describe("importing patients as batch rows", () => {
+  it("carries each patient's problems onto the row as a note", () => {
+    const items = itemsFromPatients(
+      [
+        {
+          name: "VERA",
+          rows: { OD: emptyRow("OD"), OS: emptyRow("OS") },
+          problems: [
+            { side: "OD", kind: "kOrder", k1: "43.34", k2: "43.23" },
+            { side: "OS", kind: "incomplete", missing: ["K2"] },
+          ],
+        },
+      ],
+      (problem) =>
+        problem.kind === "kOrder"
+          ? `${problem.side} K1 ${problem.k1} > K2 ${problem.k2}`
+          : `${problem.side} missing ${problem.missing.join(", ")}`,
+    );
+    expect(items[0].note).toBe("OD K1 43.34 > K2 43.23 OS missing K2");
+    expect(items[0].status).toBe("ready");
+    expect(items[0].file).toBeNull();
   });
 });
