@@ -6,6 +6,7 @@ import {
   type EyeRowState,
   type LensSettings,
 } from "./eyeRow";
+import type { ImportedPatient } from "./patientList";
 import type { EyeSide } from "./types";
 
 /**
@@ -153,6 +154,35 @@ export function singlePatientItem(input: {
     result: input.result,
     submitted: input.submitted,
   };
+}
+
+/**
+ * A ward list, as batch rows.
+ *
+ * One patient from the spreadsheet is exactly what one photograph was: a
+ * name and two eyes, to be reviewed before anything is calculated. They
+ * arrive `ready` rather than `scanning` — there is nothing to read, the
+ * values are already numbers — and each carries a note naming any eye the
+ * list didn't have complete values for, so a discarded eye is visible
+ * rather than merely absent.
+ */
+export function itemsFromPatients(
+  patients: ImportedPatient[],
+  describeDiscarded: (side: EyeSide, missing: string) => string,
+): BatchItem[] {
+  return patients.map((patient, index) => ({
+    id: `list-${index}-${patient.name}`,
+    fileName: patient.name,
+    file: null,
+    previewUrl: null,
+    status: "ready",
+    patientName: patient.name,
+    rows: patient.rows,
+    note:
+      patient.discarded
+        .map((eye) => describeDiscarded(eye.side, eye.missing.join(", ")))
+        .join(" ") || undefined,
+  }));
 }
 
 /** True when there is something worth carrying to the other device. */

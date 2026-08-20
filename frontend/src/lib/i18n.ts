@@ -104,6 +104,19 @@ const en = {
   planEmpty: "Fill in every field for at least one eye to enable calculation.",
   cloudflareHint:
     'Usually nothing else is needed. If the calculator site asks for a security check, it appears here to be completed by hand — click "Verify you are human" and the calculation continues on its own.',
+  listImportLabel: "Or import a patient list (.xlsx or .csv)",
+  listImporting: "Reading the list…",
+  listImported: (count: number) =>
+    `${count} patient${count === 1 ? "" : "s"} read. Check the values before calculating — nothing has been sent anywhere yet.`,
+  listDiscardedCount: (count: number) =>
+    `${count} eye${count === 1 ? " was" : "s were"} left out for missing measurements; each is named on its row.`,
+  listNothingUsable: (names: string) =>
+    `These have no eye with all four measurements, so there is nothing to calculate for them: ${names}.`,
+  listDiscardedEye: (side: string, missing: string) =>
+    `${side} was left out of the list — no ${missing}.`,
+  listNoPatients: "That sheet has the right headings but no patient rows under them.",
+  listFailed: "Couldn't read that file.",
+
   handoffSend: "Continue on another device",
   handoffCodeHint: (count: number) =>
     `${count} patient${count === 1 ? "" : "s"} saved. Type this code into the app on the other device to carry on there. The photos stay on this one — the values and results travel.`,
@@ -310,6 +323,19 @@ const pt: Strings = {
   planEmpty: "Preencha todos os campos de pelo menos um olho para liberar o cálculo.",
   cloudflareHint:
     'Normalmente nada mais é preciso. Se o site da calculadora pedir verificação de segurança, ela aparece aqui para ser feita à mão — clique em "Verify you are human" e o cálculo continua sozinho.',
+  listImportLabel: "Ou importe uma lista de pacientes (.xlsx ou .csv)",
+  listImporting: "Lendo a lista…",
+  listImported: (count: number) =>
+    `${count} paciente${count === 1 ? "" : "s"} lido${count === 1 ? "" : "s"}. Confira os valores antes de calcular — nada foi enviado a lugar nenhum ainda.`,
+  listDiscardedCount: (count: number) =>
+    `${count} olho${count === 1 ? " ficou" : "s ficaram"} de fora por falta de medidas; cada um está indicado na sua linha.`,
+  listNothingUsable: (names: string) =>
+    `Estes não têm nenhum olho com as quatro medidas, então não há o que calcular para eles: ${names}.`,
+  listDiscardedEye: (side: string, missing: string) =>
+    `${side} ficou de fora da lista — sem ${missing}.`,
+  listNoPatients: "Essa planilha tem os cabeçalhos certos, mas nenhuma linha de paciente abaixo deles.",
+  listFailed: "Não foi possível ler esse arquivo.",
+
   handoffSend: "Continuar em outro dispositivo",
   handoffCodeHint: (count: number) =>
     `${count} paciente${count === 1 ? "" : "s"} salvo${count === 1 ? "" : "s"}. Digite este código no app do outro dispositivo para continuar por lá. As fotos ficam neste aparelho — o que viaja são os valores e os resultados.`,

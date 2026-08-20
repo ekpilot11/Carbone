@@ -756,3 +756,23 @@ button.secondary,
      can paste. */
   user-select: all;
 }
+
+/* Importing the clinic's own cataract list. Sits with the handoff field,
+   since both are ways of starting a day's work that isn't a photograph. */
+.list-import {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid #eef1f4;
+}
+
+.list-import label {
+  display: block;
+  font-size: 0.9rem;
+  color: #55606d;
+  margin-bottom: 0.35rem;
+}
+
+.list-import input[type="file"] {
+  width: 100%;
+  font-size: 0.9rem;
+}

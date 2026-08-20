@@ -17,10 +17,13 @@ import {
   fromPortableBatch,
   hasWorkToHandOff,
   isPortableBatch,
+  itemsFromPatients,
   singlePatientItem,
   toPortableBatch,
   type BatchItem,
 } from "./lib/batch";
+import { readPatientList } from "./lib/patientList";
+import { parseDelimited, readSpreadsheet } from "./lib/xlsx";
 import { prepareImage } from "./lib/imagePrep";
 import {
   applyBiometry,
@@ -137,6 +140,9 @@ function App() {
   const [restoredSettings, setRestoredSettings] = useState<LensSettings | null>(null);
   const [restoredKIndex, setRestoredKIndex] = useState<string | null>(null);
   const [sentHandoff, setSentHandoff] = useState<{ code: string; expiresAt: number } | null>(null);
+  // Importing the clinic's cataract list (one patient per pair of rows).
+  const [listBusy, setListBusy] = useState(false);
+  const [listMessage, setListMessage] = useState<string | null>(null);
 
   const eyeTitles = useMemo<Record<EyeSide, string>>(
     () => ({ OD: t.eyeOd, OS: t.eyeOs }),
@@ -416,6 +422,49 @@ function App() {
   }
 
   /**
+   * Reads the clinic's cataract list into the batch view.
+   *
+   * Nothing is calculated here: the list becomes the same editable rows a
+   * day's photographs would, and the clinician reviews them first. An eye
+   * the list didn't have all four measurements for is discarded rather than
+   * half-imported, and the row says which and why.
+   */
+  async function importList(file: File) {
+    setListBusy(true);
+    setListMessage(null);
+    try {
+      const grid = /\.xlsx$/i.test(file.name)
+        ? await readSpreadsheet(file)
+        : parseDelimited(await file.text());
+      const list = readPatientList(grid);
+      if (list.patients.length === 0) {
+        setListMessage(t.listNoPatients);
+        return;
+      }
+
+      setRestoredBatch(itemsFromPatients(list.patients, t.listDiscardedEye));
+      setBatchFiles(null);
+      setResult(null);
+      setSubmitted(null);
+      setListMessage(
+        [
+          t.listImported(list.patients.length),
+          list.discardedEyes > 0 ? t.listDiscardedCount(list.discardedEyes) : null,
+          list.withoutUsableEye.length > 0
+            ? t.listNothingUsable(list.withoutUsableEye.join(", "))
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+    } catch (err) {
+      setListMessage(err instanceof Error ? err.message : t.listFailed);
+    } finally {
+      setListBusy(false);
+    }
+  }
+
+  /**
    * Hands this one patient to the other machine — the commonest case of all,
    * since a single exam is photographed on the phone and typed on the
    * hospital PC. It travels as a batch of one and arrives as a single row,
@@ -568,6 +617,26 @@ function App() {
           previewUrl={batchFiles ? null : preview}
           busy={scanBusy}
         />
+
+        {/* The clinic's cataract list, read as a day's work: one patient per
+            pair of rows, exactly what one photograph used to be. */}
+        {!batchFiles && !restoredBatch && (
+          <div className="list-import">
+            <label htmlFor="list-file">{t.listImportLabel}</label>
+            <input
+              id="list-file"
+              type="file"
+              accept=".xlsx,.csv,.tsv,.txt"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void importList(file);
+              }}
+            />
+            {listBusy && <p className="hint">{t.listImporting}</p>}
+            {listMessage && <p className="scan-message">{listMessage}</p>}
+          </div>
+        )}
 
         {/* Picking a day's work up on the other machine. The phone and the
             hospital PC can't reach each other, so the work travels by a code

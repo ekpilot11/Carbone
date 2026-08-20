@@ -145,6 +145,42 @@ Rows that need attention say so rather than passing quietly:
 Finish with **Download N records (one PDF)** — a single file, one page per
 patient, in upload order — or take any single patient's record on its own.
 
+## Importing the clinic's list (.xlsx / .csv)
+
+The practice keeps its cataract list as a spreadsheet — one patient per pair
+of rows, the name written once with the two eyes beneath it. **Or import a
+patient list** on the main screen reads one, and each patient becomes exactly
+what one photograph becomes: an editable row in the batch view, reviewed
+before anything is calculated.
+
+It expects a header row naming the patient and the eye plus AXL, K1, K2 and
+ACD (Portuguese or English), anywhere below whatever title rows the sheet
+carries. Everything else about the file is read defensively, because a ward
+list is a working document:
+
+- **Decimal commas** — `22,16` is twenty-two point one six.
+- **Annotations** — a trailing `*` marks a value the clinic flagged; it is
+  not part of the number.
+- **Not-measured markers** — `n/e`, `n/a`, `-` and blanks all mean the same:
+  no value.
+- **`OE`** is the left eye, which the calculator calls OS.
+- **K1 is the lower K**, as everywhere else here. The list isn't consistent
+  about which column holds which, so they are ordered on import.
+- The list carries no refraction target, so each eye starts at **plano (0)**,
+  editable like any other field.
+
+**An eye is all four measurements or none.** Missing any one of them and the
+whole eye is discarded rather than half-imported — a partly filled eye is
+the one thing the calculator rejects, and importing three of four values
+invites someone to complete it from memory. The row says which eye went and
+what it lacked, patients with no usable eye are named on import, and nothing
+is dropped silently. Reading the practice's own 58-patient list gives 53
+patients with at least one calculable eye, 14 eyes discarded, and the 5
+patients with nothing usable named — matching the sheet's own notes.
+
+The file is read **entirely in the browser** (no spreadsheet library — a
+small ZIP/XML reader, like the PDF writer); nothing is uploaded.
+
 ## Eyes are all-or-nothing
 
 The calculator rejects an eye that is missing any of axial length, K1, K2,
