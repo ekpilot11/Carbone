@@ -197,7 +197,7 @@ keep showing the page it had cached.
 | `docker` / `cloudflared` *não é reconhecido* | The PowerShell window opened before the program was installed. Open a new one. |
 | `ERR_CONNECTION_REFUSED` on localhost | The container isn't running. `docker compose ps`, then `docker compose logs --tail 30`. |
 | `ps` says `Restarting` | It's crash-looping. The logs name the reason. |
-| Port 80 conflict on `up` | Set `HOST_PORT=8080` in `.env`, run `docker compose up -d` again. |
+| `port is already allocated` / `Bind for 0.0.0.0:80 failed` | Something else on that PC holds port 80. `Start Lens.cmd` offers to switch to 8080 and remembers it; by hand, add `HOST_PORT=8080` to `.env`. |
 | The tunnel says *unable to reach the origin service* | The tunnel is fine; the app behind it isn't. Check `http://localhost` first. |
 | A **502 Bad gateway** page appearing inside the app | Cloudflare gave up waiting. Calculations no longer hold a connection open, so this should not happen — if it does, `http://localhost` on the PC bypasses the tunnel entirely. |
 | Changes don't appear after `git pull` | Ctrl+Shift+R. If that fails, `docker compose build --no-cache` then `docker compose up -d`. |

@@ -151,13 +151,60 @@ if (-not (Ran-OK)) {
 }
 
 # --- build and start -----------------------------------------------------
+
+<#
+    Rewrites HOST_PORT in .env, leaving everything else (the API key) alone.
+
+    Written line by line rather than appended: a file Notepad saved has no
+    trailing newline, so appending would glue HOST_PORT onto the end of the
+    key. WriteAllLines also drops any byte-order mark, which docker compose
+    would otherwise read as part of the first variable's name.
+#>
+function Set-HostPort([int]$newPort) {
+    $envPath = Join-Path $repo ".env"
+    $lines = @()
+    if (Test-Path $envPath) { $lines = @(Get-Content $envPath) }
+    $lines = @($lines | Where-Object { $_ -notmatch '^\s*HOST_PORT\s*=' })
+    $lines += "HOST_PORT=$newPort"
+    [System.IO.File]::WriteAllLines($envPath, $lines)
+}
+
+function Start-App {
+    $output = docker compose up -d --build 2>&1
+    $output | ForEach-Object { Write-Host "     $_" }
+    return $output
+}
+
 Say "3/5  Building and starting the app (a few seconds if nothing changed)..."
-docker compose up -d --build 2>&1 | ForEach-Object { Write-Host "     $_" }
+$composeOutput = Start-App
+
 if (-not (Ran-OK)) {
-    Problem "     The app didn't start. The lines above say why."
-    Problem "     If a port is already in use, set HOST_PORT=8080 in the .env file."
-    Read-Host "`nPress Enter to close"
-    exit 1
+    # By far the commonest failure on a new machine: something else already
+    # holds port 80 — IIS, a printer service, another web app. Nothing about
+    # that needs a human decision, so it is offered rather than explained.
+    $portTaken = ($composeOutput | Select-String -Pattern "port is already allocated|address already in use|Bind for .* failed" -Quiet)
+
+    if ($portTaken -and $port -ne 8080) {
+        Warn ""
+        Warn "     Port $port is already being used by something else on this computer."
+        $answer = Read-Host "     Use port 8080 instead? This is remembered in .env. (Y/n)"
+        if ($answer -eq "" -or $answer -match '^[Yy]') {
+            Set-HostPort 8080
+            $port = 8080
+            $localUrl = "http://localhost:8080"
+            Say "     Trying again on port 8080..."
+            $composeOutput = Start-App
+        }
+    }
+
+    if (-not (Ran-OK)) {
+        Problem ""
+        Problem "     The app didn't start. The lines above say why."
+        Problem "     If a port is in use and 8080 is taken too, put a different"
+        Problem "     number in the .env file, e.g. HOST_PORT=8090"
+        Read-Host "`nPress Enter to close"
+        exit 1
+    }
 }
 
 # --- wait until it actually answers --------------------------------------
