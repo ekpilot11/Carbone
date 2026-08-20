@@ -46,39 +46,99 @@ if (Test-Path ".env") {
 $localUrl = if ($port -eq 80) { "http://localhost" } else { "http://localhost:$port" }
 
 # --- Docker --------------------------------------------------------------
-Say "1/5  Checking Docker..."
-docker info 2>&1 | Out-Null
-if (-not (Ran-OK)) {
-    Warn "     Docker isn't running yet - starting Docker Desktop."
-    $desktop = Join-Path $env:ProgramFiles "Docker\Docker\Docker Desktop.exe"
-    if (Test-Path $desktop) {
-        Start-Process $desktop | Out-Null
-    } else {
-        Problem "     Docker Desktop isn't installed at $desktop."
-        Problem "     Install it (see docs/RUNNING.md), then run this again."
-        Read-Host "`nPress Enter to close"
-        exit 1
+# The engine answering is the only thing that counts. The window being open
+# doesn't mean the engine is up, and the engine can be up with no window.
+function Docker-Up {
+    docker info 2>&1 | Out-Null
+    return (Ran-OK)
+}
+
+<#
+    Docker Desktop is not always at one path: a per-machine install lands in
+    Program Files, a per-user one under AppData, and the installer lets you
+    choose. So this asks Windows where it is, in the order that gives the
+    most reliable answer, rather than guessing a single location — which is
+    exactly what an earlier version of this script did, on a machine where
+    Docker was installed and working.
+#>
+function Find-DockerDesktop {
+    foreach ($key in @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\Docker Desktop.exe",
+        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\Docker Desktop.exe"
+    )) {
+        try {
+            $path = (Get-ItemProperty -Path $key -ErrorAction Stop).'(default)'
+            if ($path -and (Test-Path $path)) { return $path }
+        } catch { }
     }
 
-    # Docker Desktop takes a while on a cold boot; the engine is what matters,
-    # not the window, so this waits for the engine to answer.
+    try {
+        $dir = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Docker Inc.\Docker\1.0" -ErrorAction Stop).AppPath
+        if ($dir) {
+            $exe = Join-Path $dir "Docker Desktop.exe"
+            if (Test-Path $exe) { return $exe }
+        }
+    } catch { }
+
+    foreach ($candidate in @(
+        (Join-Path $env:ProgramFiles "Docker\Docker\Docker Desktop.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "Docker\Docker\Docker Desktop.exe"),
+        (Join-Path $env:LOCALAPPDATA "Docker\Docker Desktop.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\Docker\Docker\Docker Desktop.exe")
+    )) {
+        if ($candidate -and (Test-Path $candidate)) { return $candidate }
+    }
+
+    # The Start Menu shortcut is there whichever way it was installed.
+    foreach ($menu in @($env:ProgramData, $env:AppData)) {
+        if (-not $menu) { continue }
+        $link = Join-Path $menu "Microsoft\Windows\Start Menu\Programs\Docker Desktop.lnk"
+        if (Test-Path $link) { return $link }
+    }
+
+    return $null
+}
+
+Say "1/5  Checking Docker..."
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    Problem "     Docker isn't installed on this machine (no 'docker' command)."
+    Problem "     See docs/RUNNING.md, step 2."
+    Read-Host "`nPress Enter to close"
+    exit 1
+}
+
+if (-not (Docker-Up)) {
+    $desktop = Find-DockerDesktop
+    if ($desktop) {
+        Warn "     Docker isn't running yet - starting Docker Desktop."
+        Start-Process $desktop | Out-Null
+    } else {
+        # Not fatal. Docker is clearly installed (the command exists), this
+        # script just can't find the launcher — so ask, and keep waiting.
+        Warn "     Docker isn't running, and I couldn't find Docker Desktop to start it."
+        Warn "     Please open Docker Desktop from the Start menu now - this will"
+        Warn "     carry on by itself as soon as the engine answers."
+    }
+
+    # A cold start can take a couple of minutes, longer on a busy machine.
     $waited = 0
-    while ($waited -lt 180) {
+    while ($waited -lt 240) {
         Start-Sleep -Seconds 3
         $waited += 3
-        docker info 2>&1 | Out-Null
-        if (Ran-OK) { break }
-        Write-Host "     ...waiting for the Docker engine ($waited s)"
+        if (Docker-Up) { break }
+        if ($waited % 15 -eq 0) { Write-Host "     ...waiting for the Docker engine ($waited s)" }
     }
-    docker info 2>&1 | Out-Null
-    if (-not (Ran-OK)) {
-        Problem "     Docker still isn't answering after 3 minutes."
-        Problem "     Open Docker Desktop and check what it says, then run this again."
+
+    if (-not (Docker-Up)) {
+        Problem "     Docker still isn't answering after 4 minutes."
+        Problem "     Open Docker Desktop and see what it says - if it reports"
+        Problem "     'Virtualization support not detected', that is a BIOS setting,"
+        Problem "     not this app. Then run this again."
         Read-Host "`nPress Enter to close"
         exit 1
     }
 }
-Write-Host "     Docker is running."
+Write-Host "     Docker is running." -ForegroundColor Green
 
 # --- latest code ---------------------------------------------------------
 Say "2/5  Fetching the latest version..."
