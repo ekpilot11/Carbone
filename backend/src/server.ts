@@ -231,9 +231,28 @@ app.get("/healthz", (_req, res) => {
 const frontendDist =
   process.env.FRONTEND_DIST ?? path.resolve(import.meta.dirname, "../../frontend/dist");
 if (existsSync(frontendDist)) {
-  app.use(express.static(frontendDist));
+  // index.html is never cached; everything else is free to be.
+  //
+  // The built asset filenames carry a content hash, so a new version means
+  // new filenames and the browser fetches them. index.html is the one file
+  // whose name never changes — cache it and the browser keeps pointing at
+  // last week's assets, which is why an update used to need Ctrl+Shift+R to
+  // show up. Revalidating one small file per visit is a cheap price for
+  // "click the launcher and you have the new version".
+  const noCacheHtml = (res: express.Response) => {
+    res.setHeader("Cache-Control", "no-cache, must-revalidate");
+  };
+
+  app.use(
+    express.static(frontendDist, {
+      setHeaders(res, filePath) {
+        if (filePath.endsWith("index.html")) noCacheHtml(res);
+      },
+    }),
+  );
   // Single-page app: anything that isn't a file and isn't the API is a route.
   app.get(/^(?!\/api\/).*/, (_req, res) => {
+    noCacheHtml(res);
     res.sendFile(path.join(frontendDist, "index.html"));
   });
 }

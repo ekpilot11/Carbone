@@ -187,8 +187,8 @@ redirects for a while, but not forever:
 git remote set-url origin https://github.com/ekpilot11/LensCalc.git
 ```
 
-After an update, reload the browser with **Ctrl+Shift+R** — otherwise it may
-keep showing the page it had cached.
+The launcher already does all of this — `git pull` is its step 2 — so this
+is only for when you want to watch each step.
 
 ## When something is wrong
 
@@ -200,7 +200,7 @@ keep showing the page it had cached.
 | `port is already allocated` / `Bind for 0.0.0.0:80 failed` | Something else on that PC holds port 80. `Start Lens.cmd` offers to switch to 8080 and remembers it; by hand, add `HOST_PORT=8080` to `.env`. |
 | The tunnel says *unable to reach the origin service* | The tunnel is fine; the app behind it isn't. Check `http://localhost` first. |
 | A **502 Bad gateway** page appearing inside the app | Cloudflare gave up waiting. Calculations no longer hold a connection open, so this should not happen — if it does, `http://localhost` on the PC bypasses the tunnel entirely. |
-| Changes don't appear after `git pull` | Ctrl+Shift+R. If that fails, `docker compose build --no-cache` then `docker compose up -d`. |
+| Changes don't appear after an update | Reload the page. The server tells browsers not to cache it, so this should be enough; if it isn't, Ctrl+Shift+R, then `docker compose build --no-cache` and `docker compose up -d`. |
 
 ## What this setup still doesn't have
 
