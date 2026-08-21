@@ -3,8 +3,17 @@
  * than re-entered per patient. Keep in sync with frontend/src/lib/constants.ts.
  */
 export const IOL_MODEL = "Biconvex";
-export const A_CONSTANT = 118.4;
-export const LENS_FACTOR = 1.57;
+
+/**
+ * What the form starts with. The pair is consistent — 1.36 is the Lens
+ * Factor the calculator derives from an A Constant of 118 — so it doesn't
+ * matter which of the two gets typed into the site: it lands in the same
+ * place either way. (These are the practice's defaults, not the anchor of
+ * the calculator's own constant line; that is 1.57 / 118.4 and lives in the
+ * frontend's CONSTANT_LINE.)
+ */
+export const A_CONSTANT = 118;
+export const LENS_FACTOR = 1.36;
 
 /**
  * The calculator's default lens-dropdown option: "use the constants I typed

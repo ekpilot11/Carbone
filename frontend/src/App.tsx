@@ -129,7 +129,10 @@ function App() {
   // values, so it is sent with every run and recorded on the PDF.
   const [kIndex, setKIndex] = useState<KIndex>(DEFAULT_K_INDEX);
   // Which constant the clinician actually set; the site derives the other.
-  const [constantSource, setConstantSource] = useState<"lensFactor" | "aConstant">("lensFactor");
+  // Starts on the A Constant, because that is the value this practice thinks
+  // in — and with a consistent starting pair either choice lands in the same
+  // place, so this only decides which number is literally typed.
+  const [constantSource, setConstantSource] = useState<"lensFactor" | "aConstant">("aConstant");
   const settings: LensSettings = { lens, ...constants, constantSource };
   // Filled from the photo when the name is legible, and editable either
   // way. It heads the PDF record and is never sent to the calculator.
@@ -161,7 +164,7 @@ function App() {
    */
   function changeLens(next: string) {
     setLens(next);
-    setConstantSource("lensFactor");
+    setConstantSource("aConstant");
     if (isPersonalConstant(next)) {
       setConstants({ lensFactor: String(LENS_FACTOR), aConstant: String(A_CONSTANT) });
       return;

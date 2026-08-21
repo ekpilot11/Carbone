@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { A_CONSTANT, aConstantFor, LENS_FACTOR, lensFactorFor } from "./constants";
+import { A_CONSTANT, aConstantFor, CONSTANT_LINE, LENS_FACTOR, lensFactorFor } from "./constants";
 import {
   BUNDLED_LENS_OPTIONS,
   isPersonalConstant,
@@ -35,13 +35,18 @@ describe("the transcribed constants table", () => {
 
   /**
    * The calculator's own pairs sit on one line: A = 118.4 + (LF - 1.57) x
-   * 1.9195 — the practice's 1.57/118.4 included. A mistyped digit falls off
-   * that line, which makes this a real check on the transcription rather
-   * than a restatement of it.
+   * 1.9195. A mistyped digit falls off that line, which makes this a real
+   * check on the transcription rather than a restatement of it.
+   *
+   * Anchored on the calculator's reference pair, deliberately not on this
+   * practice's pre-filled defaults — those are a preference and can be
+   * changed; where the line sits is a fact about the site.
    */
   it("has every pair on the calculator's own lens-factor/A-constant line", () => {
     const offLine = Object.entries(LENS_CONSTANTS).filter(([, { lensFactor, aConstant }]) => {
-      const expected = A_CONSTANT + (lensFactor - LENS_FACTOR) * 1.9195;
+      const expected =
+        CONSTANT_LINE.aConstant +
+        (lensFactor - CONSTANT_LINE.lensFactor) * CONSTANT_LINE.aPerLensFactor;
       return Math.abs(expected - aConstant) > 0.02;
     });
     expect(offLine).toEqual([]);
@@ -62,6 +67,12 @@ describe("the two constants as one value", () => {
     }
   });
 
+  /**
+   * The form's own starting pair has to agree with itself: the calculator
+   * derives 118 from a Lens Factor of 1.36 and 1.36 back from 118. If it
+   * didn't, the untouched box would quietly overrule the one that was set —
+   * which is exactly the failure this whole mechanism exists to prevent.
+   */
   it("leaves the practice's own pair exactly where it starts", () => {
     expect(aConstantFor(LENS_FACTOR)).toBe(A_CONSTANT);
     expect(lensFactorFor(A_CONSTANT)).toBe(LENS_FACTOR);

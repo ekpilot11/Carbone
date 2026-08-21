@@ -199,7 +199,7 @@ point of the persistent profile.
   `biometry.lensThickness` / `biometry.wtw` are optional and simply skipped
   when absent. `manual` holds the one clinician-entered value (target
   refraction); `iol` holds the IOL design/constants from
-  `src/constants.ts` (expected to be `Biconvex` / `118.4` / `1.57` for this
+  `src/constants.ts` (expected to be `Biconvex` / `118` / `1.36` for this
   practice, but still validated per-request rather than hardcoded
   server-side, so a future frontend change doesn't require a backend
   redeploy) plus `iol.lens`. Returns

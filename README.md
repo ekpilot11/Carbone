@@ -75,11 +75,14 @@ nothing is persisted anywhere.
 
 The form carries the calculator's three IOL controls: the lens dropdown and
 the Lens Factor / A Constant boxes beside it. Both constants are typed in —
-never read from a photo — and start on this practice's own values (1.57 and
-118.4), with the dropdown on "Personal Constant".
+never read from a photo — and start on this practice's own values: **A
+Constant 118**, with the Lens Factor showing the 1.36 the calculator derives
+from it, and the dropdown on "Personal Constant".
 
-- **Nothing changed** → the automation types 1.57 and 118.4 into the site's
-  own boxes.
+- **Nothing changed** → the automation types the A Constant 118 into the
+  site's own box and lets it derive the Lens Factor. The starting pair is
+  deliberately self-consistent, so it lands in the same place whichever of
+  the two is typed.
 - **Either constant edited** → **the one you edited** is typed into the site,
   and the site derives the other. They are one value in two units: typing
   into either box on the calculator recomputes its partner, so filling both

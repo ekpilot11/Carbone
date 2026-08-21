@@ -4,8 +4,31 @@
  * backend/src/constants.ts.
  */
 export const IOL_MODEL = "Biconvex";
-export const A_CONSTANT = 118.4;
-export const LENS_FACTOR = 1.57;
+
+/**
+ * What the form starts with. The pair is deliberately consistent — 1.36 is
+ * the Lens Factor the calculator derives from an A Constant of 118 — so
+ * whichever of the two is typed into the site, it settles on the same
+ * place. An inconsistent default would mean the untouched box quietly
+ * overruling the one that was set.
+ */
+export const A_CONSTANT = 118;
+export const LENS_FACTOR = 1.36;
+
+/**
+ * The calculator's own reference pair, and the slope through it.
+ *
+ * Not the same thing as the defaults above, and it must not be confused
+ * with them: this is where the *calculator's* constant line is anchored,
+ * and every one of the 37 lenses in its dropdown sits on it (which is what
+ * `lenses.test.ts` checks). Changing what this practice pre-fills must
+ * never move that line.
+ */
+export const CONSTANT_LINE = {
+  aConstant: 118.4,
+  lensFactor: 1.57,
+  aPerLensFactor: 1.9195,
+} as const;
 
 /**
  * The bands the calculator itself prints beside those two fields
@@ -30,14 +53,14 @@ export const CONSTANT_RANGES = {
  * in, the site derives its partner, and both are read back off the page
  * afterwards.
  */
-const A_PER_LENS_FACTOR = 1.9195;
-
 export function aConstantFor(lensFactor: number): number {
-  return Number((A_CONSTANT + (lensFactor - LENS_FACTOR) * A_PER_LENS_FACTOR).toFixed(2));
+  const { aConstant, lensFactor: anchor, aPerLensFactor } = CONSTANT_LINE;
+  return Number((aConstant + (lensFactor - anchor) * aPerLensFactor).toFixed(2));
 }
 
 export function lensFactorFor(aConstant: number): number {
-  return Number((LENS_FACTOR + (aConstant - A_CONSTANT) / A_PER_LENS_FACTOR).toFixed(2));
+  const { aConstant: anchor, lensFactor, aPerLensFactor } = CONSTANT_LINE;
+  return Number((lensFactor + (aConstant - anchor) / aPerLensFactor).toFixed(2));
 }
 
 export function constantInRange(value: string, range: { min: number; max: number }): boolean {
