@@ -56,6 +56,8 @@ export interface FixedIolInput {
   lens: string;
   aConstant: number;
   lensFactor: number;
+  /** Which of the two the clinician set; the site derives its partner. */
+  constantSource?: "lensFactor" | "aConstant";
 }
 
 export interface EyeInput {

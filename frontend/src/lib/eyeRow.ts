@@ -141,6 +141,12 @@ export interface LensSettings {
   lens: string;
   lensFactor: string;
   aConstant: string;
+  /**
+   * Which constant the clinician set. The calculator's two boxes are one
+   * value in two units, so only one can be typed into it — the site derives
+   * the other. Absent means the Lens Factor, which is where the form starts.
+   */
+  constantSource?: "lensFactor" | "aConstant";
 }
 
 /**
@@ -175,6 +181,7 @@ export function toEyeInput(row: EyeRowState, settings: LensSettings): EyeInput {
       lens: settings.lens,
       aConstant: Number(settings.aConstant),
       lensFactor: Number(settings.lensFactor),
+      constantSource: settings.constantSource,
     },
   };
 }

@@ -28,6 +28,16 @@ export interface EyeInput {
     lens?: string;
     aConstant: number;
     lensFactor: number;
+    /**
+     * Which of the two the clinician actually set.
+     *
+     * The calculator's two constant boxes are one value wearing two hats —
+     * type into either and it recomputes the other. So only one of them can
+     * be filled: whichever is typed *last* is the one that survives, and the
+     * other is whatever the site derives from it. This names the one that
+     * must be typed, defaulting to the Lens Factor.
+     */
+    constantSource?: "lensFactor" | "aConstant";
   };
 }
 

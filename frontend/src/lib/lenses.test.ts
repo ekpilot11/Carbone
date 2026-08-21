@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { A_CONSTANT, LENS_FACTOR } from "./constants";
+import { A_CONSTANT, aConstantFor, LENS_FACTOR, lensFactorFor } from "./constants";
 import {
   BUNDLED_LENS_OPTIONS,
   isPersonalConstant,
@@ -45,5 +45,47 @@ describe("the transcribed constants table", () => {
       return Math.abs(expected - aConstant) > 0.02;
     });
     expect(offLine).toEqual([]);
+  });
+});
+
+/**
+ * The two constant boxes on the calculator are one value in two units: type
+ * into either and it recomputes the other. The form mirrors that so what is
+ * on screen matches what the site will hold — and only the edited one is
+ * ever typed into the site, which derives its partner itself.
+ */
+describe("the two constants as one value", () => {
+  it("derives each from the other the way the calculator's own lenses do", () => {
+    for (const [lens, { lensFactor, aConstant }] of Object.entries(LENS_CONSTANTS)) {
+      expect(Math.abs(aConstantFor(lensFactor) - aConstant), lens).toBeLessThanOrEqual(0.02);
+      expect(Math.abs(lensFactorFor(aConstant) - lensFactor), lens).toBeLessThanOrEqual(0.02);
+    }
+  });
+
+  it("leaves the practice's own pair exactly where it starts", () => {
+    expect(aConstantFor(LENS_FACTOR)).toBe(A_CONSTANT);
+    expect(lensFactorFor(A_CONSTANT)).toBe(LENS_FACTOR);
+  });
+
+  it("round-trips, so editing one box and back doesn't drift", () => {
+    for (const lensFactor of [1.2, 1.57, 1.88, 2.1, 2.44]) {
+      expect(lensFactorFor(aConstantFor(lensFactor))).toBeCloseTo(lensFactor, 2);
+    }
+  });
+
+  /**
+   * Rounded to two decimals, as the site displays them — otherwise a
+   * derived value would differ from the site's in the last digits and the
+   * "the calculator rewrote your constant" warning would cry wolf on every
+   * run. (118.4 + 0.31 x 1.9195 is 118.995045, so 1.88 rounds to 119.00 —
+   * the lens table's 118.99 is the manufacturer's own figure, which is why
+   * the check above allows 0.02 either way.)
+   */
+  it("rounds to two decimals, as the calculator displays them", () => {
+    for (const value of [aConstantFor(1.6), aConstantFor(1.88), lensFactorFor(119.5)]) {
+      expect(Math.round(value * 100) / 100).toBe(value);
+    }
+    expect(aConstantFor(1.6)).toBe(118.46);
+    expect(lensFactorFor(119.5)).toBe(2.14);
   });
 });

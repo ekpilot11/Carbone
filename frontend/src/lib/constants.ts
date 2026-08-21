@@ -17,6 +17,29 @@ export const CONSTANT_RANGES = {
   aConstant: { min: 112, max: 125 },
 } as const;
 
+/**
+ * How the calculator ties its two constants together.
+ *
+ * They are one value in two units: type into either box on the site and it
+ * recomputes the other from this relationship. Every one of the 37 lenses in
+ * its own dropdown follows it exactly — which is what `lenses.test.ts`
+ * checks, and why it can be relied on here.
+ *
+ * It is used only to show, in this form, what the site is about to hold. The
+ * calculation itself uses the site's own arithmetic: one constant is typed
+ * in, the site derives its partner, and both are read back off the page
+ * afterwards.
+ */
+const A_PER_LENS_FACTOR = 1.9195;
+
+export function aConstantFor(lensFactor: number): number {
+  return Number((A_CONSTANT + (lensFactor - LENS_FACTOR) * A_PER_LENS_FACTOR).toFixed(2));
+}
+
+export function lensFactorFor(aConstant: number): number {
+  return Number((LENS_FACTOR + (aConstant - A_CONSTANT) / A_PER_LENS_FACTOR).toFixed(2));
+}
+
 export function constantInRange(value: string, range: { min: number; max: number }): boolean {
   const parsed = Number(value);
   return value.trim() !== "" && Number.isFinite(parsed) && parsed >= range.min && parsed <= range.max;

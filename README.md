@@ -80,9 +80,13 @@ never read from a photo — and start on this practice's own values (1.57 and
 
 - **Nothing changed** → the automation types 1.57 and 118.4 into the site's
   own boxes.
-- **Either constant edited** → the automation types whatever is in the
-  boxes. They are range-checked against the bands the site prints beside
-  them (Lens Factor -2 to 5, A Constant 112 to 125) before a run starts.
+- **Either constant edited** → **the one you edited** is typed into the site,
+  and the site derives the other. They are one value in two units: typing
+  into either box on the calculator recomputes its partner, so filling both
+  means the second silently overwrites the first. Editing one here shows what
+  the other becomes, so the form matches what the site will hold. Both are
+  range-checked against the bands the site prints beside them (Lens Factor
+  -2 to 5, A Constant 112 to 125) before a run starts.
 - **A lens picked from the dropdown** → the automation only selects that
   lens on the site, and **the site applies that lens's own constants**. The
   boxes then show that lens's values for reference and stop accepting edits;

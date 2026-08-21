@@ -655,37 +655,52 @@ async function fillConstants(
   const anyEye = request.od ?? request.os;
   if (!anyEye) return ["lensFactor"];
 
-  const missing: string[] = [];
-  const targets = [
-    {
-      field: "aConstant",
-      labels: A_CONSTANT_LABELS,
-      value: String(anyEye.iol.aConstant),
-      tolerate: CONSTANT_RANGES.aConstant,
-    },
-    {
-      field: "lensFactor",
-      labels: LENS_FACTOR_LABELS,
-      value: String(anyEye.iol.lensFactor),
-      tolerate: CONSTANT_RANGES.lensFactor,
-    },
-  ] as const;
+  // Exactly one of the two is typed, never both.
+  //
+  // The form's boxes are one value in two units: typing into either makes
+  // the page recompute the other. Filling both therefore means the second
+  // one silently overwrites the first — which it did, in this order, so a
+  // clinician who changed only the A Constant watched it revert to the value
+  // derived from an untouched Lens Factor of 1.57. It looked like the field
+  // did nothing, and a run went off with the wrong constant.
+  //
+  // So the caller says which one it means, and the site derives its partner
+  // — the site's own arithmetic, not a copy of it here. Both are read back
+  // afterwards and reported, so whatever it derived is visible.
+  const source = anyEye.iol.constantSource ?? "lensFactor";
+  const target =
+    source === "aConstant"
+      ? {
+          field: "aConstant",
+          labels: A_CONSTANT_LABELS,
+          value: String(anyEye.iol.aConstant),
+          tolerate: CONSTANT_RANGES.aConstant,
+        }
+      : {
+          field: "lensFactor",
+          labels: LENS_FACTOR_LABELS,
+          value: String(anyEye.iol.lensFactor),
+          tolerate: CONSTANT_RANGES.lensFactor,
+        };
 
-  for (const target of targets) {
-    const control = await locateConstantInput(root, target.labels, target.tolerate);
-    if (!control) {
-      missing.push(target.field);
-      continue;
-    }
-    await setLocatorValue(control, target.value);
-    filled.push({
-      field: target.field,
-      locator: control,
-      expected: target.value,
-      tolerate: target.tolerate,
-    });
-  }
-  return missing;
+  const control = await locateConstantInput(root, target.labels, target.tolerate);
+  if (!control) return [target.field];
+
+  await setLocatorValue(control, target.value);
+  // The page recomputes the partner box on input, sometimes via a postback;
+  // let that settle before the measurements are typed around it.
+  await control
+    .page()
+    .waitForLoadState("networkidle", { timeout: 5000 })
+    .catch(() => {});
+
+  filled.push({
+    field: target.field,
+    locator: control,
+    expected: target.value,
+    tolerate: target.tolerate,
+  });
+  return [];
 }
 
 /**

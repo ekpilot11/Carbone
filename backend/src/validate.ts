@@ -39,6 +39,13 @@ function validateEye(eye: unknown, side: EyeSide): string | null {
   if (e.iol.aConstant < 112 || e.iol.aConstant > 125) {
     return `${side}: iol.aConstant must be between 112 and 125`;
   }
+  if (
+    e.iol?.constantSource !== undefined &&
+    e.iol.constantSource !== "lensFactor" &&
+    e.iol.constantSource !== "aConstant"
+  ) {
+    return `${side}: iol.constantSource must be "lensFactor" or "aConstant"`;
+  }
   if (!isFiniteNumber(e.iol?.lensFactor)) return `${side}: iol.lensFactor must be a number`;
   if (e.iol.lensFactor < -2 || e.iol.lensFactor > 5) {
     return `${side}: iol.lensFactor must be between -2 and 5`;

@@ -39,8 +39,10 @@ import {
 } from "./lib/eyeRow";
 import {
   A_CONSTANT,
+  aConstantFor,
   CONSTANT_RANGES,
   constantInRange,
+  lensFactorFor,
   DEFAULT_K_INDEX,
   IOL_MODEL,
   K_INDEX_OPTIONS,
@@ -126,7 +128,9 @@ function App() {
   // The calculator's own K-index radio. It governs how the site reads the K
   // values, so it is sent with every run and recorded on the PDF.
   const [kIndex, setKIndex] = useState<KIndex>(DEFAULT_K_INDEX);
-  const settings: LensSettings = { lens, ...constants };
+  // Which constant the clinician actually set; the site derives the other.
+  const [constantSource, setConstantSource] = useState<"lensFactor" | "aConstant">("lensFactor");
+  const settings: LensSettings = { lens, ...constants, constantSource };
   // Filled from the photo when the name is legible, and editable either
   // way. It heads the PDF record and is never sent to the calculator.
   const [patientName, setPatientName] = useState("");
@@ -157,6 +161,7 @@ function App() {
    */
   function changeLens(next: string) {
     setLens(next);
+    setConstantSource("lensFactor");
     if (isPersonalConstant(next)) {
       setConstants({ lensFactor: String(LENS_FACTOR), aConstant: String(A_CONSTANT) });
       return;
@@ -166,6 +171,32 @@ function App() {
       lensFactor: known ? String(known.lensFactor) : "",
       aConstant: known ? String(known.aConstant) : "",
     });
+  }
+
+  /**
+   * Editing one constant shows what the other becomes.
+   *
+   * The calculator's two boxes are one value in two units — type into either
+   * and it recomputes the other. Showing that here means the form matches
+   * what the site will hold, instead of leaving a stale partner on screen
+   * that looks like it still applies. The edited box is also remembered:
+   * only that one is typed into the site, which derives its partner itself.
+   */
+  function editConstant(field: "lensFactor" | "aConstant", value: string) {
+    setConstantSource(field);
+    const parsed = Number(value);
+    const derivable = value.trim() !== "" && Number.isFinite(parsed);
+    if (field === "lensFactor") {
+      setConstants({
+        lensFactor: value,
+        aConstant: derivable ? String(aConstantFor(parsed)) : "",
+      });
+    } else {
+      setConstants({
+        aConstant: value,
+        lensFactor: derivable ? String(lensFactorFor(parsed)) : "",
+      });
+    }
   }
 
   function changeLanguage(next: Lang) {
@@ -713,7 +744,7 @@ function App() {
               step="0.01"
               value={constants.lensFactor}
               readOnly={!usingPersonalConstant}
-              onChange={(e) => setConstants((c) => ({ ...c, lensFactor: e.target.value }))}
+              onChange={(e) => editConstant("lensFactor", e.target.value)}
             />
           </label>
           <label className="field constant-field">
@@ -723,7 +754,7 @@ function App() {
               step="0.01"
               value={constants.aConstant}
               readOnly={!usingPersonalConstant}
-              onChange={(e) => setConstants((c) => ({ ...c, aConstant: e.target.value }))}
+              onChange={(e) => editConstant("aConstant", e.target.value)}
             />
           </label>
           <div className="field k-index-field">
