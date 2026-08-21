@@ -65,6 +65,8 @@ const en = {
   fieldLensFactor: "Lens Factor",
   fieldAConstant: "A Constant",
   kIndexLabel: "K Index",
+  constantsUnavailable:
+    "Couldn't reach the calculator to look up the matching constant, so that box is left empty. This does not stop you: the value you set is what gets sent, and the calculator works the other one out itself.",
   constantsAsking:
     "Asking the calculator what the other constant becomes — it decides that, not this app, so the two always agree.",
   kOrderWarning: (side: string, k1: string, k2: string) =>
@@ -296,6 +298,8 @@ const pt: Strings = {
   fieldLensFactor: "Lens Factor",
   fieldAConstant: "Constante A",
   kIndexLabel: "Índice K",
+  constantsUnavailable:
+    "Não foi possível consultar a calculadora para saber a constante correspondente, então esse campo fica vazio. Isso não impede nada: o valor que você definiu é o que será enviado, e a calculadora calcula o outro sozinha.",
   constantsAsking:
     "Perguntando à calculadora qual fica a outra constante — quem decide isso é ela, não este app, então os dois sempre batem.",
   kOrderWarning: (side: string, k1: string, k2: string) =>

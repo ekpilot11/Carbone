@@ -72,10 +72,18 @@ changes and runs start failing, re-verify with the steps below:
    the text-anchored lookup with direct id/name selectors — that's far more
    robust than any label heuristic.
 
-3. Check how the form links "Lens Factor ... or A Constant": if typing in
-   one autocalculates the other via a postback, filling both (A Constant
-   first, Lens Factor second, the current order) may need to become
-   fill-one-only.
+3. Check how the form links "Lens Factor ... or A Constant". Two things
+   about that pair have already bitten:
+
+   - **Only one may be filled.** They are one value in two units, so the
+     second overwrites the first. `fillConstants` fills whichever the
+     request names in `iol.constantSource` and lets the site derive its
+     partner.
+   - **The page recomputes on `change`, not `input`.** Playwright's `fill()`
+     dispatches only `input`, so the handler never ran and the partner box
+     silently kept its old value — which is why `setLinkedValue` dispatches
+     `change` and blurs. If a selector change ever reverts to a plain
+     `fill()` here, the symptom is a partner value that never moves.
 
 4. Also confirm the "Calculate" button's accessible name and how results
    are rendered, and adjust `extractResultsText` in `barrett.ts` if the

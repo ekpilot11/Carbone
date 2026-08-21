@@ -132,6 +132,7 @@ function App() {
   // Asking the calculator what one constant makes the other, without doing
   // it on every keystroke, and without an old answer landing after a new one.
   const [constantsBusy, setConstantsBusy] = useState(false);
+  const [constantsNote, setConstantsNote] = useState<string | null>(null);
   const conversionTimer = useRef<number | undefined>(undefined);
   const conversionToken = useRef(0);
   // Which constant the clinician actually set; the site derives the other.
@@ -197,6 +198,7 @@ function App() {
    */
   function editConstant(field: "lensFactor" | "aConstant", value: string) {
     setConstantSource(field);
+    setConstantsNote(null);
     setConstants((current) => ({ ...current, [field]: value, [partnerOf(field)]: "" }));
 
     const parsed = Number(value);
@@ -220,12 +222,15 @@ function App() {
           if (token !== conversionToken.current) return;
           const partner = pair[partnerOf(field)];
           if (partner !== undefined) {
+            setConstantsNote(null);
             setConstants((current) => ({ ...current, [partnerOf(field)]: partner }));
           }
         })
         .catch(() => {
-          // Left blank on purpose: the calculator will fill it in itself,
-          // and a guess here is what caused the problem in the first place.
+          // The box stays blank on purpose — a guess here is what caused the
+          // original problem — but silence is its own bug: someone watching
+          // an empty field with no explanation has no idea whether to wait.
+          if (token === conversionToken.current) setConstantsNote(t.constantsUnavailable);
         })
         .finally(() => {
           if (token === conversionToken.current) setConstantsBusy(false);
@@ -459,11 +464,19 @@ function App() {
   // A named lens brings its own constants, so only a personal-constant run
   // needs the two boxes to hold usable numbers.
   const usingPersonalConstant = isPersonalConstant(lens);
+  // Only the constant the clinician actually set has to be a usable number.
+  // Its partner belongs to the calculator: it is shown once the site answers,
+  // stays empty when the site can't be reached, and is derived by the site
+  // during the run either way. Requiring it here meant a blank partner box
+  // disabled Calculate outright — the form refusing to work over a value it
+  // never needed.
   const constantsProblem = !usingPersonalConstant
     ? null
-    : !constantInRange(constants.lensFactor, CONSTANT_RANGES.lensFactor)
+    : constantSource === "lensFactor" &&
+        !constantInRange(constants.lensFactor, CONSTANT_RANGES.lensFactor)
       ? t.planBadLensFactor(CONSTANT_RANGES.lensFactor.min, CONSTANT_RANGES.lensFactor.max)
-      : !constantInRange(constants.aConstant, CONSTANT_RANGES.aConstant)
+      : constantSource === "aConstant" &&
+          !constantInRange(constants.aConstant, CONSTANT_RANGES.aConstant)
         ? t.planBadAConstant(CONSTANT_RANGES.aConstant.min, CONSTANT_RANGES.aConstant.max)
         : null;
   // Names the values an eye is short of, so "left out" is never a mystery.
@@ -838,6 +851,7 @@ function App() {
           </div>
         </div>
         {constantsBusy && <p className="hint">{t.constantsAsking}</p>}
+        {!constantsBusy && constantsNote && <p className="scan-message">{constantsNote}</p>}
         <p className="hint">{t.kIndexHint(DEFAULT_K_INDEX)}</p>
         <p className="fixed-iol-note">
           {usingPersonalConstant

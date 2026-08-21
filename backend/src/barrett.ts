@@ -128,6 +128,25 @@ interface FilledEntry {
   tolerate?: { min: number; max: number };
 }
 
+/**
+ * Types a value into a box the page reacts to, and makes sure it reacts.
+ *
+ * `fill()` dispatches an `input` event and nothing else. A form that
+ * recomputes on `change` — which is what an ASP.NET page does, since
+ * `change` is what fires when a box loses focus — therefore never runs its
+ * handler, and the partner value silently stays as it was. That is exactly
+ * how asking the calculator to convert an A Constant came back with the
+ * Lens Factor unchanged for every value.
+ *
+ * So the change is dispatched explicitly and the box is blurred, which is
+ * what a person typing into it and clicking elsewhere would cause.
+ */
+async function setLinkedValue(locator: Locator, value: string): Promise<void> {
+  await locator.fill(value);
+  await locator.dispatchEvent("change");
+  await locator.blur().catch(() => {});
+}
+
 /** Fills a located control regardless of whether it's a text input, a <select>, or a radio/checkbox. */
 async function setLocatorValue(locator: Locator, value: string): Promise<void> {
   const tagName = await locator.evaluate((el) => el.tagName.toLowerCase());
@@ -701,8 +720,8 @@ export async function convertConstant(input: {
     const control = await locateConstantInput(root, labels, range);
     if (!control) throw new Error(`Couldn't find the calculator's ${from} box.`);
 
-    await setLocatorValue(control, String(value));
-    // The page recomputes the partner on input, sometimes through a postback.
+    await setLinkedValue(control, String(value));
+    // The page recomputes the partner on change, sometimes through a postback.
     await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
 
     const pair: ConstantPair = {
@@ -770,8 +789,8 @@ async function fillConstants(
   const control = await locateConstantInput(root, target.labels, target.tolerate);
   if (!control) return [target.field];
 
-  await setLocatorValue(control, target.value);
-  // The page recomputes the partner box on input, sometimes via a postback;
+  await setLinkedValue(control, target.value);
+  // The page recomputes the partner box on change, sometimes via a postback;
   // let that settle before the measurements are typed around it.
   await control
     .page()

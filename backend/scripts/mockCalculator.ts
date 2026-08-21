@@ -90,8 +90,8 @@ const PAGE = `<!doctype html>
       <tr><td>Doctor Name</td><td><input type="text"></td>
           <td>Patient Name</td><td><input type="text" id="patient"></td>
           <td>Patient ID</td><td><input type="text"></td></tr>
-      <tr><td>Lens Factor</td><td><input type="text" id="lf" value="1.57" oninput="deriveA()"></td>
-          <td>(-2.0~5.0) or A Constant</td><td><input type="text" id="ac" value="118.4" oninput="deriveLf()"></td>
+      <tr><td>Lens Factor</td><td><input type="text" id="lf" value="1.57" onchange="deriveA()"></td>
+          <td>(-2.0~5.0) or A Constant</td><td><input type="text" id="ac" value="118.4" onchange="deriveLf()"></td>
           <td>(112~125)</td>
           <td><select id="lens" onchange="applyLens()">
             <option value="pc">Personal Constant</option>
@@ -124,7 +124,10 @@ function showTab(which) {
   document.getElementById('data').style.display = which === 'data' ? '' : 'none';
   document.getElementById('formula').style.display = which === 'formula' ? '' : 'none';
 }
-// The site derives one constant from the other; so does this.
+// The site derives one constant from the other; so does this — and, like an
+// ASP.NET form, only on **change** (i.e. when the box loses focus), not on
+// every keystroke. Typing a value in without blurring leaves the partner
+// stale, which is exactly how a lookup can come back with nothing.
 function deriveA() {
   const lf = parseFloat(document.getElementById('lf').value);
   if (!isNaN(lf)) document.getElementById('ac').value = (118.4 + (lf - 1.57) * 1.9195).toFixed(2);
