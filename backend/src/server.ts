@@ -7,6 +7,7 @@ import {
   challengeFrame,
   challengeType,
   closeSharedBrowser,
+  convertConstant,
   currentChallenge,
   fetchLensOptions,
   runBarrettCalculation,
@@ -128,6 +129,31 @@ app.get("/api/calculate/jobs/:jobId", (req, res) => {
     return;
   }
   res.json(job);
+});
+
+/**
+ * What the calculator turns one constant into.
+ *
+ * `?aConstant=119.5` or `?lensFactor=2.1`; the answer is both boxes as the
+ * site itself filled them. The app asks this instead of computing the
+ * partner from a formula, because a formula of ours disagreed with the
+ * site's and showed the clinician a Lens Factor the calculator would never
+ * produce. Best-effort: the form simply shows nothing when it fails.
+ */
+app.get("/api/constants", async (req, res) => {
+  const read = (name: string) => {
+    const raw = req.query[name];
+    return typeof raw === "string" && raw.trim() !== "" ? Number(raw) : undefined;
+  };
+  try {
+    res.json(
+      await convertConstant({ aConstant: read("aConstant"), lensFactor: read("lensFactor") }),
+    );
+  } catch (err) {
+    res.status(502).json({
+      error: err instanceof Error ? err.message : "Couldn't ask the calculator.",
+    });
+  }
 });
 
 // The lens names the live calculator offers, so the frontend's dropdown can

@@ -129,6 +129,34 @@ export async function sendChallengeInput(
 }
 
 /**
+ * What the calculator turns one constant into.
+ *
+ * The Lens Factor and A Constant are one value in two units, and only the
+ * calculator knows the exact conversion — a line fitted through its
+ * published lens table agrees in the middle of the range and drifts at the
+ * edges, which is how the form came to show a Lens Factor the site would
+ * never produce. So the site is asked. Answers are cached server-side, so
+ * the same value costs one page load once.
+ */
+export interface ConstantPair {
+  lensFactor?: string;
+  aConstant?: string;
+}
+
+export async function convertConstant(
+  input: { aConstant: number } | { lensFactor: number },
+): Promise<ConstantPair> {
+  const query =
+    "aConstant" in input ? `aConstant=${input.aConstant}` : `lensFactor=${input.lensFactor}`;
+  const res = await fetch(`${API_BASE}/api/constants?${query}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? "The calculator didn't answer.");
+  }
+  return res.json();
+}
+
+/**
  * Parks a day's work on the server under a short code, so it can be picked
  * up on the other machine. The server keeps it in memory only, for the
  * working day, and forgets it the moment it is collected.

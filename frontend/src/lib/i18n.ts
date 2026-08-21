@@ -65,6 +65,8 @@ const en = {
   fieldLensFactor: "Lens Factor",
   fieldAConstant: "A Constant",
   kIndexLabel: "K Index",
+  constantsAsking:
+    "Asking the calculator what the other constant becomes — it decides that, not this app, so the two always agree.",
   kOrderWarning: (side: string, k1: string, k2: string) =>
     `⚠ ${side}: K1 (${k1}) is above K2 (${k2}). K1 is the flatter meridian, so this pair is the wrong way round or mistyped — that eye will not be calculated until it is corrected.`,
   planSuspect: (sides: string) =>
@@ -294,6 +296,8 @@ const pt: Strings = {
   fieldLensFactor: "Lens Factor",
   fieldAConstant: "Constante A",
   kIndexLabel: "Índice K",
+  constantsAsking:
+    "Perguntando à calculadora qual fica a outra constante — quem decide isso é ela, não este app, então os dois sempre batem.",
   kOrderWarning: (side: string, k1: string, k2: string) =>
     `⚠ ${side}: K1 (${k1}) está acima de K2 (${k2}). K1 é o meridiano mais plano, então esse par está invertido ou digitado errado — esse olho não será calculado até ser corrigido.`,
   planSuspect: (sides: string) =>

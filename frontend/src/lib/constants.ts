@@ -41,17 +41,17 @@ export const CONSTANT_RANGES = {
 } as const;
 
 /**
- * How the calculator ties its two constants together.
+ * The relationship, for checking the bundled lens table only.
  *
- * They are one value in two units: type into either box on the site and it
- * recomputes the other from this relationship. Every one of the 37 lenses in
- * its own dropdown follows it exactly — which is what `lenses.test.ts`
- * checks, and why it can be relied on here.
+ * These do **not** decide what the form shows. A line fitted through the
+ * calculator's published pairs matches near the middle of the range and
+ * drifts at the edges — enough that a clinician who moved the A Constant saw
+ * one Lens Factor here and a different one on the site. The form now asks
+ * the calculator itself (see `convertConstant`), and shows nothing until it
+ * answers.
  *
- * It is used only to show, in this form, what the site is about to hold. The
- * calculation itself uses the site's own arithmetic: one constant is typed
- * in, the site derives its partner, and both are read back off the page
- * afterwards.
+ * What the line is still good for is catching a mistyped digit in the 37
+ * transcribed lens pairs, which is what `lenses.test.ts` uses it for.
  */
 export function aConstantFor(lensFactor: number): number {
   const { aConstant, lensFactor: anchor, aPerLensFactor } = CONSTANT_LINE;
@@ -62,6 +62,18 @@ export function lensFactorFor(aConstant: number): number {
   const { aConstant: anchor, lensFactor, aPerLensFactor } = CONSTANT_LINE;
   return Number((lensFactor + (aConstant - anchor) / aPerLensFactor).toFixed(2));
 }
+
+/** The other box of the pair. */
+export function partnerOf(field: "lensFactor" | "aConstant"): "lensFactor" | "aConstant" {
+  return field === "lensFactor" ? "aConstant" : "lensFactor";
+}
+
+/**
+ * How long to wait after the last keystroke before asking the calculator.
+ * Someone typing "119.5" passes through 1, 11 and 119 on the way, and none
+ * of those deserve a page load on someone else's site.
+ */
+export const CONSTANT_LOOKUP_DELAY_MS = 700;
 
 export function constantInRange(value: string, range: { min: number; max: number }): boolean {
   const parsed = Number(value);

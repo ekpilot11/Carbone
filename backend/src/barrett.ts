@@ -639,6 +639,90 @@ export async function fetchLensOptions(): Promise<string[]> {
 }
 
 /**
+ * What the calculator turns one constant into.
+ *
+ * The two boxes are one value in two units, and the conversion between them
+ * is the site's, not ours. Reproducing it from a formula is how the form
+ * came to show a Lens Factor that disagreed with the calculator's: a line
+ * fitted through the published lens table matches near the middle and drifts
+ * at the edges, so a clinician who moved the A Constant saw one number here
+ * and a different one there.
+ *
+ * So the question is put to the calculator itself: type the value into its
+ * own box, let it recompute, and read back what it decided. The answer is
+ * right by construction and stays right if APACRS ever changes the
+ * relationship — no table here to go stale.
+ *
+ * Answers are cached for the life of the process: the mapping doesn't move
+ * while the server is up, and a clinician nudging a constant shouldn't wait
+ * for a page load twice for the same number.
+ */
+const conversionCache = new Map<string, ConstantPair>();
+
+export interface ConstantPair {
+  lensFactor?: string;
+  aConstant?: string;
+}
+
+export async function convertConstant(input: {
+  aConstant?: number;
+  lensFactor?: number;
+}): Promise<ConstantPair> {
+  const from: "aConstant" | "lensFactor" =
+    input.aConstant !== undefined ? "aConstant" : "lensFactor";
+  const value = input.aConstant ?? input.lensFactor;
+  if (value === undefined || !Number.isFinite(value)) {
+    throw new Error("Give either aConstant or lensFactor as a number.");
+  }
+  const range = CONSTANT_RANGES[from];
+  if (value < range.min || value > range.max) {
+    throw new Error(
+      `${from === "aConstant" ? "A Constant" : "Lens Factor"} must be between ` +
+        `${range.min} and ${range.max} — the band the calculator prints beside it.`,
+    );
+  }
+
+  const key = `${from}:${value}`;
+  const cached = conversionCache.get(key);
+  if (cached) return cached;
+
+  const { context, shared } = await openContext(true);
+  if (shared) activeSharedRuns++;
+  let page: Page | null = null;
+  try {
+    page = await context.newPage();
+    await page.goto(CALCULATOR_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+    const root = await findFormRoot(page, 15000);
+    if (!root) {
+      throw new Error(`Couldn't load the calculator form — ${await describePage(page)}`);
+    }
+
+    const labels = from === "aConstant" ? A_CONSTANT_LABELS : LENS_FACTOR_LABELS;
+    const control = await locateConstantInput(root, labels, range);
+    if (!control) throw new Error(`Couldn't find the calculator's ${from} box.`);
+
+    await setLocatorValue(control, String(value));
+    // The page recomputes the partner on input, sometimes through a postback.
+    await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+
+    const pair: ConstantPair = {
+      lensFactor: await readLensFactor(root),
+      aConstant: await readAConstant(root),
+    };
+    if (pair.lensFactor === undefined || pair.aConstant === undefined) {
+      throw new Error("The calculator didn't show both constants after the change.");
+    }
+
+    conversionCache.set(key, pair);
+    return pair;
+  } finally {
+    await page?.close().catch(() => {});
+    if (shared) activeSharedRuns--;
+    else await closeContext(context);
+  }
+}
+
+/**
  * Types both constants for a personal-constant run.
  *
  * A Constant goes in first and Lens Factor second, deliberately: the page

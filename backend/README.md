@@ -179,6 +179,13 @@ point of the persistent profile.
 
 ## Endpoints
 
+- `GET /api/constants?aConstant=119.5` (or `?lensFactor=2.1`) — asks the
+  calculator what one constant makes the other, and returns both boxes as
+  the site filled them. The app uses this instead of computing the partner:
+  a line fitted through the site's published lens pairs agrees near the
+  middle of the range and drifts at the edges, which put a Lens Factor on
+  screen that the calculator would never produce. Answers are cached for the
+  process lifetime, so a repeated value costs nothing.
 - `POST /api/calculate/jobs` — **what the app uses.** Same body as
   `/api/calculate`; returns `202 {jobId}` at once and runs the calculation
   in the background. `GET /api/calculate/jobs/:jobId` then answers

@@ -86,10 +86,20 @@ from it, and the dropdown on "Personal Constant".
 - **Either constant edited** → **the one you edited** is typed into the site,
   and the site derives the other. They are one value in two units: typing
   into either box on the calculator recomputes its partner, so filling both
-  means the second silently overwrites the first. Editing one here shows what
-  the other becomes, so the form matches what the site will hold. Both are
-  range-checked against the bands the site prints beside them (Lens Factor
-  -2 to 5, A Constant 112 to 125) before a run starts.
+  means the second silently overwrites the first.
+
+  The partner shown here is **the calculator's own answer**, not a
+  calculation of ours. Editing one box asks the site what the other becomes
+  (a short pause, then it fills in; answers are cached). Deriving it from a
+  formula was tried and abandoned: a line fitted through the site's published
+  lens pairs agrees near the middle of the range and drifts at the edges, so
+  the form showed a Lens Factor the calculator would never produce. If the
+  site can't be reached the partner box simply stays empty — nothing is
+  riding on it, since the calculation types the edited constant and lets the
+  site derive its partner regardless.
+
+  Both are range-checked against the bands the site prints beside them (Lens
+  Factor -2 to 5, A Constant 112 to 125) before a run starts.
 - **A lens picked from the dropdown** → the automation only selects that
   lens on the site, and **the site applies that lens's own constants**. The
   boxes then show that lens's values for reference and stop accepting edits;
@@ -101,7 +111,10 @@ None of them are used for the calculation itself — they are shown so the
 form matches what the site will apply, so an entry that goes out of date is
 a wrong number on screen, never a wrong calculation. A unit test checks
 every pair against the line the site's own values follow
-(A = 118.4 + (LF − 1.57) × 1.9195), which catches a mistyped digit.
+(A = 118.4 + (LF − 1.57) × 1.9195), which catches a mistyped digit. That
+line is a sanity check on the transcription, **not** the site's conversion:
+it matches the published pairs to about 0.01, which is close enough to catch
+a wrong digit and nowhere near close enough to put on screen.
 
 Whichever constants the site actually held are read back off the page and
 reported with the results and on the PDF. The two are linked on

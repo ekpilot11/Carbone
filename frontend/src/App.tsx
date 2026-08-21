@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { BatchPanel } from "./components/BatchPanel";
 import { CameraCapture } from "./components/CameraCapture";
@@ -6,6 +6,7 @@ import { ChallengeOverlay } from "./components/ChallengeOverlay";
 import {
   calculateBarrett,
   collectHandoff,
+  convertConstant,
   fetchLensOptions,
   parkHandoff,
   scanPhoto,
@@ -39,10 +40,10 @@ import {
 } from "./lib/eyeRow";
 import {
   A_CONSTANT,
-  aConstantFor,
+  CONSTANT_LOOKUP_DELAY_MS,
   CONSTANT_RANGES,
   constantInRange,
-  lensFactorFor,
+  partnerOf,
   DEFAULT_K_INDEX,
   IOL_MODEL,
   K_INDEX_OPTIONS,
@@ -128,6 +129,11 @@ function App() {
   // The calculator's own K-index radio. It governs how the site reads the K
   // values, so it is sent with every run and recorded on the PDF.
   const [kIndex, setKIndex] = useState<KIndex>(DEFAULT_K_INDEX);
+  // Asking the calculator what one constant makes the other, without doing
+  // it on every keystroke, and without an old answer landing after a new one.
+  const [constantsBusy, setConstantsBusy] = useState(false);
+  const conversionTimer = useRef<number | undefined>(undefined);
+  const conversionToken = useRef(0);
   // Which constant the clinician actually set; the site derives the other.
   // Starts on the A Constant, because that is the value this practice thinks
   // in — and with a consistent starting pair either choice lands in the same
@@ -177,29 +183,54 @@ function App() {
   }
 
   /**
-   * Editing one constant shows what the other becomes.
+   * Editing one constant asks the calculator what the other becomes.
    *
-   * The calculator's two boxes are one value in two units — type into either
-   * and it recomputes the other. Showing that here means the form matches
-   * what the site will hold, instead of leaving a stale partner on screen
-   * that looks like it still applies. The edited box is also remembered:
-   * only that one is typed into the site, which derives its partner itself.
+   * The two boxes are one value in two units, and the conversion belongs to
+   * the site. Computing it here from a line fitted through the published
+   * lens table was close in the middle of the range and wrong at the edges,
+   * so the form showed a Lens Factor the calculator would never produce —
+   * which is worse than showing nothing, because it looks authoritative.
+   *
+   * So the partner is left blank until the site answers, and what appears is
+   * the site's own number. The edited box is remembered too: only that one
+   * is typed in when the calculation runs.
    */
   function editConstant(field: "lensFactor" | "aConstant", value: string) {
     setConstantSource(field);
+    setConstants((current) => ({ ...current, [field]: value, [partnerOf(field)]: "" }));
+
     const parsed = Number(value);
-    const derivable = value.trim() !== "" && Number.isFinite(parsed);
-    if (field === "lensFactor") {
-      setConstants({
-        lensFactor: value,
-        aConstant: derivable ? String(aConstantFor(parsed)) : "",
-      });
-    } else {
-      setConstants({
-        aConstant: value,
-        lensFactor: derivable ? String(lensFactorFor(parsed)) : "",
-      });
+    const range = CONSTANT_RANGES[field];
+    if (value.trim() === "" || !Number.isFinite(parsed) || !constantInRange(value, range)) {
+      setConstantsBusy(false);
+      return;
     }
+
+    // Debounced: someone typing "119.5" passes through 1, 11, 119… and none
+    // of those deserve a page load on someone else's site.
+    setConstantsBusy(true);
+    const token = ++conversionToken.current;
+    window.clearTimeout(conversionTimer.current);
+    conversionTimer.current = window.setTimeout(() => {
+      void convertConstant(
+        field === "aConstant" ? { aConstant: parsed } : { lensFactor: parsed },
+      )
+        .then((pair) => {
+          // A slower answer to an older keystroke must not overwrite a newer one.
+          if (token !== conversionToken.current) return;
+          const partner = pair[partnerOf(field)];
+          if (partner !== undefined) {
+            setConstants((current) => ({ ...current, [partnerOf(field)]: partner }));
+          }
+        })
+        .catch(() => {
+          // Left blank on purpose: the calculator will fill it in itself,
+          // and a guess here is what caused the problem in the first place.
+        })
+        .finally(() => {
+          if (token === conversionToken.current) setConstantsBusy(false);
+        });
+    }, CONSTANT_LOOKUP_DELAY_MS);
   }
 
   function changeLanguage(next: Lang) {
@@ -237,6 +268,34 @@ function App() {
       .catch(() => {
         if (!cancelled) sessionStorage.setItem(LENS_CACHE_KEY, "[]");
       });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * Corrects the pre-filled pair to whatever the calculator says.
+   *
+   * The form starts on this practice's A Constant with a Lens Factor beside
+   * it, and that partner is only ever as good as whoever wrote it down. One
+   * cached question at startup replaces it with the site's own number, so
+   * even an untouched form never shows a value the calculator disagrees
+   * with. Silent when the site can't be reached: the calculation types the A
+   * Constant and lets the site derive the partner anyway, so nothing is
+   * riding on the number displayed.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    convertConstant({ aConstant: A_CONSTANT })
+      .then((pair) => {
+        if (cancelled || pair.lensFactor === undefined) return;
+        setConstants((current) =>
+          current.aConstant === String(A_CONSTANT) && current.lensFactor !== pair.lensFactor
+            ? { ...current, lensFactor: pair.lensFactor! }
+            : current,
+        );
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -778,6 +837,7 @@ function App() {
             </div>
           </div>
         </div>
+        {constantsBusy && <p className="hint">{t.constantsAsking}</p>}
         <p className="hint">{t.kIndexHint(DEFAULT_K_INDEX)}</p>
         <p className="fixed-iol-note">
           {usingPersonalConstant
