@@ -13,6 +13,7 @@ import {
   runBarrettCalculation,
 } from "./barrett.js";
 import { clearJobs, readJob, startCalculation } from "./calcJobs.js";
+import { closeDatabase, exportAll, openDatabase } from "./db.js";
 import { clearHandoffs, collectHandoff, parkHandoff } from "./handoff.js";
 import { scanImage, visionConfigured } from "./scan.js";
 import type { CalculateRequest } from "./types.js";
@@ -244,6 +245,20 @@ app.get("/api/handoff/:code", (req, res) => {
   res.json({ payload });
 });
 
+/**
+ * The whole database as one file.
+ *
+ * The backup story until something better exists. Most of the ways this data
+ * can be lost — `docker compose down -v`, a Docker Desktop reset, the PC
+ * dying — are undone by having pressed this recently.
+ */
+app.get("/api/export", (_req, res) => {
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="lens-backup-${stamp}.json"`);
+  res.send(JSON.stringify(exportAll(), null, 2));
+});
+
 app.get("/healthz", (_req, res) => {
   res.json({ ok: true, visionScanning: visionConfigured() });
 });
@@ -288,8 +303,21 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
     clearHandoffs();
     clearJobs();
+    // Checkpoints the WAL. A power cut is the one failure a restart can't
+    // undo; a clean close is what keeps that to power cuts only.
+    closeDatabase();
     void closeSharedBrowser().finally(() => process.exit(0));
   });
+}
+
+// Opened at startup rather than on the first save: a path that can't be
+// written is worth finding out about while someone is watching the console,
+// not halfway through storing a patient.
+try {
+  openDatabase();
+} catch (err) {
+  console.error("Could not open the patient database:", err instanceof Error ? err.message : err);
+  process.exit(1);
 }
 
 const port = Number(process.env.PORT) || 4000;

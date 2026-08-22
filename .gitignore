@@ -12,6 +12,9 @@ dist
 # clearance a human earned), which are machine- and IP-specific.
 backend/browser-profile/
 
+# A development database. The real one lives in a Docker volume, never here.
+backend/data/
+
 # Automation debug artifacts (screenshots/HTML of the calculator page)
 backend/diagnostics/
 backend/inspect-output.json

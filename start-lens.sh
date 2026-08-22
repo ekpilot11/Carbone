@@ -36,4 +36,7 @@ else
        "Cloudflare challenge cannot be shown for anyone to complete."
 fi
 
-exec node backend/dist/server.js
+# --experimental-sqlite: node:sqlite is built into Node 22 but still behind
+# this flag there. It is the same SQLite, and it saves pulling in a native
+# module that would need a compiler in this image.
+exec node --experimental-sqlite backend/dist/server.js

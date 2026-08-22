@@ -59,6 +59,8 @@ ENV FRONTEND_DIST=/app/frontend/dist
 # Mount a volume here: this is where a Cloudflare clearance a human earned
 # survives a restart. Losing it costs another verification, nothing more.
 ENV BARRETT_PROFILE_DIR=/app/browser-profile
+# The patient database, on its own volume (see docker-compose.yml).
+ENV LENS_DB=/app/data/lens.db
 ENV PORT=4000
 EXPOSE 4000
 

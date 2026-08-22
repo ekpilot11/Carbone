@@ -1,3 +1,13 @@
+# Pinned, and not left to default to the folder name.
+#
+# Compose namespaces volumes by project, and the project defaults to whatever
+# the directory happens to be called. This repo already exists on one machine
+# as both "Carbone" and "LensCalc", so without this, starting from one folder
+# would quietly use a different database from the other — the data isn't
+# destroyed, it's invisible, which feels exactly the same to whoever is
+# looking for their patients.
+name: lenscalc
+
 services:
   lens:
     build: .
@@ -16,7 +26,13 @@ services:
       # The browser profile: keeps the Cloudflare clearance across restarts
       # and redeploys. Nothing clinical is stored in it.
       - browser-profile:/app/browser-profile
+      # The patient database. A named volume, so it survives every rebuild,
+      # restart and `git pull` — and is deleted only by `docker compose
+      # down -v`, `docker volume rm`, or a Docker Desktop reset. Back it up
+      # with the export button; see docs/RUNNING.md.
+      - lens-data:/app/data
     restart: unless-stopped
 
 volumes:
   browser-profile:
+  lens-data:
