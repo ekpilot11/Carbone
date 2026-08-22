@@ -13,9 +13,19 @@ import {
   runBarrettCalculation,
 } from "./barrett.js";
 import { clearJobs, readJob, startCalculation } from "./calcJobs.js";
-import { closeDatabase, exportAll, openDatabase } from "./db.js";
+import {
+  closeDatabase,
+  consultationsFor,
+  deletePatient,
+  exportAll,
+  listPatients,
+  matchPatient,
+  openDatabase,
+  saveConsultation,
+} from "./db.js";
 import { clearHandoffs, collectHandoff, parkHandoff } from "./handoff.js";
 import { scanImage, visionConfigured } from "./scan.js";
+import { formScanConfigured, scanForm } from "./scanForm.js";
 import type { CalculateRequest } from "./types.js";
 import { validateCalculateRequest } from "./validate.js";
 
@@ -38,6 +48,8 @@ app.use("/api/scan", express.json({ limit: "12mb" }));
 // A day's handoff is thirty patients' values and results — bigger than a
 // single calculation, nowhere near a photograph.
 app.use("/api/handoff", express.json({ limit: "2mb" }));
+// A photographed form, same order of size as a biometry photo.
+app.use("/api/forms/scan", express.json({ limit: "12mb" }));
 app.use(express.json({ limit: "20kb" }));
 
 const MEDIA_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
@@ -243,6 +255,102 @@ app.get("/api/handoff/:code", (req, res) => {
     return;
   }
   res.json({ payload });
+});
+
+/**
+ * Reads a photographed Ficha de Triagem.
+ *
+ * Nothing is stored by this route. It returns what the model made of the
+ * page, including a list of what it could not read, and the clinician
+ * reviews all of it before anything reaches the database — which matters
+ * more here than anywhere else in the app, because this is handwriting.
+ */
+app.post("/api/forms/scan", async (req, res) => {
+  if (!formScanConfigured()) {
+    res.status(503).json({
+      error:
+        "Reading forms needs a vision model. Set ANTHROPIC_API_KEY, or type the form in by hand.",
+    });
+    return;
+  }
+  const { imageBase64, mediaType } = req.body ?? {};
+  if (typeof imageBase64 !== "string" || imageBase64.length === 0) {
+    res.status(400).json({ error: "imageBase64 must be a non-empty base64 string" });
+    return;
+  }
+  if (!MEDIA_TYPES.includes(mediaType)) {
+    res.status(400).json({ error: `mediaType must be one of: ${MEDIA_TYPES.join(", ")}` });
+    return;
+  }
+  try {
+    res.json(await scanForm(imageBase64, mediaType as MediaType));
+  } catch (err) {
+    // Deliberately not logging the image or the model's output: a filled
+    // form is the most identifying thing this app handles.
+    console.error("Form scan failed:", err instanceof Error ? err.message : err);
+    res.status(502).json({ error: err instanceof Error ? err.message : "Could not read that form." });
+  }
+});
+
+/**
+ * Stores a reviewed consultation.
+ *
+ * The prontuário is required: it is what a consultation is later found by,
+ * and a consultation nobody can find again is worse than one not stored.
+ */
+app.post("/api/patients", (req, res) => {
+  const { prontuario, name, ageYears, seenOn, form } = req.body ?? {};
+  if (typeof prontuario !== "string" || prontuario.trim() === "") {
+    res.status(400).json({ error: "A prontuário is required — it is how this patient is found again." });
+    return;
+  }
+  if (typeof name !== "string" || name.trim() === "") {
+    res.status(400).json({ error: "A patient name is required." });
+    return;
+  }
+  try {
+    res.status(201).json(
+      saveConsultation({
+        prontuario,
+        name,
+        ageYears: typeof ageYears === "number" ? ageYears : undefined,
+        seenOn: typeof seenOn === "string" ? seenOn : undefined,
+        form: form ?? {},
+      }),
+    );
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Could not save." });
+  }
+});
+
+/**
+ * Finding a stored patient.
+ *
+ * Answers with what was found *and how*, because "the number matched but the
+ * name doesn't" is the one case that must never be resolved automatically —
+ * one misread digit lands on a real patient who isn't this one.
+ */
+app.get("/api/patients", (req, res) => {
+  const read = (name: string) => {
+    const raw = req.query[name];
+    return typeof raw === "string" && raw.trim() !== "" ? raw : undefined;
+  };
+  const prontuario = read("prontuario");
+  const name = read("name");
+  if (!prontuario && !name) {
+    res.json({ patients: listPatients() });
+    return;
+  }
+  res.json(matchPatient({ prontuario, name }));
+});
+
+app.get("/api/patients/:id/consultations", (req, res) => {
+  res.json({ consultations: consultationsFor(Number(req.params.id)) });
+});
+
+app.delete("/api/patients/:id", (req, res) => {
+  deletePatient(Number(req.params.id));
+  res.json({ ok: true });
 });
 
 /**
