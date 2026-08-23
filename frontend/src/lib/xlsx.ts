@@ -1,10 +1,10 @@
+import { parseXml, readCentralDirectory, readEntry } from "./zip.js";
+
 /**
  * Just enough .xlsx to read a patient list.
  *
- * A spreadsheet is a ZIP of XML, and browsers can now inflate on their own
- * (`DecompressionStream`), so this reads one directly rather than pulling in
- * a spreadsheet library — the same trade the PDF writer makes. What comes
- * back is a grid of strings; every question of *meaning* belongs to
+ * A spreadsheet is a ZIP of XML, read by the shared reader in zip.ts. What
+ * comes back is a grid of strings; every question of *meaning* belongs to
  * patientList.ts, which is where it can be tested without a binary fixture.
  *
  * It reads the workbook's first sheet, resolved through the relationships
@@ -14,97 +14,6 @@
 
 /** A worksheet as rows of columns, both trimmed of trailing blanks. */
 export type Grid = string[][];
-
-interface ZipEntry {
-  name: string;
-  compressed: boolean;
-  offset: number;
-  size: number;
-}
-
-const utf8 = new TextDecoder();
-
-/**
- * Reads the ZIP central directory. Only the fields this needs are decoded:
- * name, compression method, and where the data starts.
- */
-function readCentralDirectory(data: DataView): ZipEntry[] {
-  // The end-of-central-directory record is at the end, after a comment of
-  // unknown length, so it is found by scanning backwards for its signature.
-  let end = -1;
-  for (let i = data.byteLength - 22; i >= 0; i--) {
-    if (data.getUint32(i, true) === 0x06054b50) {
-      end = i;
-      break;
-    }
-  }
-  if (end < 0) throw new Error("Not a spreadsheet file (no ZIP directory found).");
-
-  const count = data.getUint16(end + 10, true);
-  let pointer = data.getUint32(end + 16, true);
-  const entries: ZipEntry[] = [];
-
-  for (let i = 0; i < count; i++) {
-    if (data.getUint32(pointer, true) !== 0x02014b50) break;
-    const method = data.getUint16(pointer + 10, true);
-    const compressedSize = data.getUint32(pointer + 20, true);
-    const nameLength = data.getUint16(pointer + 28, true);
-    const extraLength = data.getUint16(pointer + 30, true);
-    const commentLength = data.getUint16(pointer + 32, true);
-    const localOffset = data.getUint32(pointer + 42, true);
-    const name = utf8.decode(
-      new Uint8Array(data.buffer, data.byteOffset + pointer + 46, nameLength),
-    );
-
-    entries.push({ name, compressed: method === 8, offset: localOffset, size: compressedSize });
-    pointer += 46 + nameLength + extraLength + commentLength;
-  }
-  return entries;
-}
-
-async function readEntry(data: DataView, entry: ZipEntry): Promise<string> {
-  // The local header repeats the name and extra fields, with its own lengths.
-  const nameLength = data.getUint16(entry.offset + 26, true);
-  const extraLength = data.getUint16(entry.offset + 28, true);
-  const start = entry.offset + 30 + nameLength + extraLength;
-  const bytes = new Uint8Array(data.buffer, data.byteOffset + start, entry.size);
-
-  if (!entry.compressed) return utf8.decode(bytes);
-
-  // Fed straight into the decompressor rather than via a Blob, whose
-  // .stream() is missing from some non-browser environments this code is
-  // tested in. The copy is one XML file's worth, and detaches the chunk from
-  // the workbook buffer that backs it.
-  const chunk = new Uint8Array(entry.size);
-  chunk.set(bytes);
-  const source = new ReadableStream<BufferSource>({
-    start(controller) {
-      controller.enqueue(chunk);
-      controller.close();
-    },
-  });
-  const inflated = source.pipeThrough(new DecompressionStream("deflate-raw"));
-
-  const chunks: Uint8Array[] = [];
-  const reader = inflated.getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) chunks.push(value);
-  }
-  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const out = new Uint8Array(total);
-  let at = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, at);
-    at += chunk.length;
-  }
-  return utf8.decode(out);
-}
-
-function parseXml(text: string): Document {
-  return new DOMParser().parseFromString(text, "application/xml");
-}
 
 /** Turns "BC12" into a zero-based column index. */
 function columnIndex(ref: string): number {

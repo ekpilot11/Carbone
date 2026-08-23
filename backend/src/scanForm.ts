@@ -228,28 +228,59 @@ function validate(parsed: unknown): FormScanResponse {
   return { form, unread };
 }
 
+/**
+ * What the form arrived as.
+ *
+ * A photograph of the paper is the ordinary case — that is how the clinic
+ * fills these in. A PDF happens when the form was filled or annotated on a
+ * screen, and it reads better than a photograph of that screen would: the
+ * model sees the page itself, typed text and drawn marks alike.
+ *
+ * Word files never reach here at all. A `.docx` is read in the browser
+ * (`frontend/src/lib/docx.ts`), exactly and without leaving the machine.
+ */
+export type FormMediaType = "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
+
+function sourceBlock(data: string, mediaType: FormMediaType) {
+  return mediaType === "application/pdf"
+    ? // The document block goes before the text block, per the API contract.
+      { type: "document", source: { type: "base64", media_type: mediaType, data } }
+    : { type: "image", source: { type: "base64", media_type: mediaType, data } };
+}
+
 export async function scanForm(
   imageBase64: string,
-  mediaType: "image/jpeg" | "image/png" | "image/webp",
+  mediaType: FormMediaType,
 ): Promise<FormScanResponse> {
   const client = new Anthropic();
 
-  const response = await client.beta.messages.create({
+  /**
+   * Two settings here are about *latency*, not quality, and both were
+   * learned the hard way — a real form came back as a Cloudflare 502
+   * because the read outlasted the tunnel's patience.
+   *
+   * - `effort: "low"`. Opus 5 thinks by default, at high effort. Deciding
+   *   which checkbox carries an X is perception, not deliberation, and the
+   *   schema already constrains every answer to the form's own options.
+   *   Thinking stays adaptive rather than disabled: turning it off on this
+   *   model has its own failure modes, and low effort is the cheaper fix.
+   * - Streaming. The result is identical, but a long read can no longer
+   *   trip the SDK's own HTTP timeout on the way.
+   */
+  const stream = client.beta.messages.stream({
     model: MODEL,
     max_tokens: MAX_TOKENS,
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
-    output_config: { format: { type: "json_schema", schema: SCHEMA } },
+    output_config: { format: { type: "json_schema", schema: SCHEMA }, effort: "low" },
     messages: [
       {
         role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: mediaType, data: imageBase64 } },
-          { type: "text", text: PROMPT },
-        ],
+        content: [sourceBlock(imageBase64, mediaType), { type: "text", text: PROMPT }],
       },
     ],
-  } as Anthropic.Beta.MessageCreateParamsNonStreaming);
+  } as Parameters<typeof client.beta.messages.stream>[0]);
+  const response = await stream.finalMessage();
 
   if (response.stop_reason === "refusal") {
     throw new Error(

@@ -137,9 +137,11 @@ const en = {
   formCancel: "Cancel",
   formSaveFailed: "Could not save this consultation.",
   formFieldsUnavailable: "Couldn't load the form's fields from the server.",
-  formImportLabel: "Or photograph a consultation form (Ficha de Diagnóstico)",
+  formImportLabel: "Or send a consultation form (Ficha de Diagnóstico) — photo, PDF or Word",
   formStorageNote:
-    "The photo is sent to the reading service, and the name, CPF, date of birth and prontuário it contains are stored on the computer running this app so the biometry can find them on exam day. The photo itself is not stored. There is no login yet — use invented patients.",
+    "A photo or PDF is sent to the reading service. A Word file is read here and never leaves this computer. Either way, the name, CPF, date of birth and prontuário on the form are stored on the computer running this app, so the biometry can find them on exam day — the photo or file itself is not. There is no login yet, so use invented patients.",
+  formWordNoMarks:
+    "That Word file has no ticked boxes in it. Marks typed into the document (☒, or a checkbox clicked in Word) are read exactly — but a mark drawn over the page with a pen or stylus is a drawing, and the file gives no sign of it. The typed fields are below; tick the rest by hand, or send a photo or PDF instead so they can be read.",
   formReading: "Reading the form…",
   formSeenOn: "Date of this consultation",
   formSaved: (name: string, how: string) =>
@@ -461,9 +463,11 @@ const pt: Strings = {
   formCancel: "Cancelar",
   formSaveFailed: "Não foi possível salvar esta consulta.",
   formFieldsUnavailable: "Não foi possível carregar os campos da ficha do servidor.",
-  formImportLabel: "Ou fotografe uma ficha de diagnóstico",
+  formImportLabel: "Ou envie uma ficha de diagnóstico — foto, PDF ou Word",
   formStorageNote:
-    "A foto é enviada ao serviço de leitura, e o nome, o CPF, a data de nascimento e o prontuário nela contidos ficam guardados no computador que roda este aplicativo, para que a biometria os encontre no dia do exame. A foto em si não é guardada. Ainda não há login — use pacientes inventados.",
+    "Foto ou PDF são enviados ao serviço de leitura. Um arquivo do Word é lido aqui mesmo e não sai deste computador. De todo modo, o nome, o CPF, a data de nascimento e o prontuário da ficha ficam guardados no computador que roda este aplicativo, para que a biometria os encontre no dia do exame — a foto ou o arquivo, não. Ainda não há login, então use pacientes inventados.",
+  formWordNoMarks:
+    "Esse arquivo do Word não tem nenhuma caixa marcada. Marcas digitadas no documento (☒, ou uma caixa de seleção clicada no Word) são lidas com exatidão — mas uma marca feita por cima da página com caneta ou stylus é um desenho, e o arquivo não dá sinal dela. Os campos digitados estão abaixo; marque o resto à mão, ou envie uma foto ou PDF para que sejam lidos.",
   formReading: "Lendo a ficha…",
   formSeenOn: "Data desta consulta",
   formSaved: (name: string, how: string) =>

@@ -69,10 +69,7 @@ export async function scanPhoto(imageBase64: string, mediaType: string): Promise
   if (res.status === 503) {
     throw new ScanUnavailableError("Photo scanning is not configured on the server.");
   }
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new Error(body?.error ?? `Scan failed (${res.status}).`);
-  }
+  if (!res.ok) throw new Error(await describeFailure(res, "read that photo"));
   return res.json();
 }
 
@@ -286,23 +283,78 @@ export interface FormScanResult {
   unread: string[];
 }
 
+/**
+ * Reads a photographed or uploaded form, as a job.
+ *
+ * It used to be one long request, and the first real form anyone tried came
+ * back as **"Couldn't read that form (502)."** — which was not our server
+ * answering at all. The read outlasted the tunnel's patience and Cloudflare
+ * served its own error page; the app, finding no JSON in it, fell back to
+ * printing the status code. Now the submit returns at once and this polls,
+ * so nothing in between has a long connection to give up on.
+ */
 export async function scanFormPhoto(
   imageBase64: string,
   mediaType: string,
 ): Promise<FormScanResult> {
-  const res = await fetch(`${API_BASE}/api/forms/scan`, {
+  const started = await fetch(`${API_BASE}/api/forms/scan/jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ imageBase64, mediaType }),
   });
-  if (res.status === 503) {
+  if (started.status === 503) {
     throw new ScanUnavailableError("Reading forms is not configured on the server.");
   }
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new Error(body?.error ?? `Couldn't read that form (${res.status}).`);
+  if (!started.ok) throw new Error(await describeFailure(started, "start reading that form"));
+
+  const { id } = (await started.json()) as { id?: string };
+  if (!id) throw new Error("The server did not start reading the form.");
+
+  const deadline = Date.now() + JOB_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, JOB_POLL_MS));
+
+    const res = await fetch(`${API_BASE}/api/forms/scan/jobs/${id}`);
+    if (!res.ok) {
+      // A failed poll is not a failed read — a phone changing network, or a
+      // tunnel blinking, must not discard work that is still going.
+      if (res.status === 404) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? "The server lost track of that form.");
+      }
+      continue;
+    }
+
+    const job = (await res.json()) as { status: string; result?: FormScanResult; error?: string };
+    if (job.status === "done" && job.result) return job.result;
+    if (job.status === "failed") throw new Error(job.error ?? "Could not read that form.");
   }
-  return res.json();
+
+  throw new Error(
+    "Reading this form is taking longer than five minutes. Try a clearer photo, or type the " +
+      "form in by hand.",
+  );
+}
+
+/**
+ * Says which thing went wrong, rather than only that something did.
+ *
+ * Our own errors are JSON with a sentence in them. A gateway that gave up
+ * answers with an HTML page, and printing "(502)" for that tells the
+ * clinician nothing they can act on — the two have completely different
+ * remedies, so they get completely different sentences.
+ */
+async function describeFailure(res: Response, attempting: string): Promise<string> {
+  const body = (await res.json().catch(() => null)) as { error?: string } | null;
+  if (body?.error) return body.error;
+  if (res.status === 502 || res.status === 503 || res.status === 504) {
+    return (
+      `The connection to the server gave up while trying to ${attempting}. ` +
+      "Nothing was lost — wait a moment and try again. If it keeps happening, the tunnel may " +
+      "need restarting on the computer running the app."
+    );
+  }
+  return `Couldn't ${attempting} (${res.status}).`;
 }
 
 export interface StoredPatient {

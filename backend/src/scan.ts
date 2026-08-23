@@ -210,14 +210,17 @@ export async function scanImage(
 ): Promise<ScanResponse> {
   const client = new Anthropic();
 
-  const response = await client.beta.messages.create({
+  // Low effort and streaming, for the same reason as the form scan: reading
+  // printed digits is perception, not deliberation, and this model thinks at
+  // high effort unless told otherwise. See scanForm.ts for the full note.
+  const stream = client.beta.messages.stream({
     model: MODEL,
     max_tokens: MAX_TOKENS,
     // Claude Opus 5's safety classifiers can decline a request; a fallback
     // model serves it instead of the call simply failing.
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
-    output_config: { format: { type: "json_schema", schema: SCHEMA } },
+    output_config: { format: { type: "json_schema", schema: SCHEMA }, effort: "low" },
     messages: [
       {
         role: "user",
@@ -227,7 +230,8 @@ export async function scanImage(
         ],
       },
     ],
-  } as Anthropic.Beta.MessageCreateParamsNonStreaming);
+  } as Parameters<typeof client.beta.messages.stream>[0]);
+  const response = await stream.finalMessage();
 
   if (response.stop_reason === "refusal") {
     throw new Error(

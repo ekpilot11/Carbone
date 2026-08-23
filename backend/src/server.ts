@@ -12,7 +12,13 @@ import {
   fetchLensOptions,
   runBarrettCalculation,
 } from "./barrett.js";
-import { clearJobs, readJob, startCalculation } from "./calcJobs.js";
+import {
+  clearJobs,
+  readFormScanJob,
+  readJob,
+  startCalculation,
+  startFormScan,
+} from "./calcJobs.js";
 import {
   closeDatabase,
   consultationsFor,
@@ -31,7 +37,7 @@ import { isValidCpf } from "./cpf.js";
 import { clearHandoffs, collectHandoff, parkHandoff } from "./handoff.js";
 import { scanImage, visionConfigured } from "./scan.js";
 import { FORM_SECTIONS } from "./formFields.js";
-import { formScanConfigured, scanForm } from "./scanForm.js";
+import { formScanConfigured, type FormMediaType } from "./scanForm.js";
 import type { CalculateRequest } from "./types.js";
 import { validateCalculateRequest } from "./validate.js";
 
@@ -60,6 +66,13 @@ app.use(express.json({ limit: "20kb" }));
 
 const MEDIA_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 type MediaType = (typeof MEDIA_TYPES)[number];
+
+/**
+ * A form can also arrive as a PDF — filled or annotated on a screen, which
+ * reads better than a photograph of that screen. Word files never reach
+ * here: a .docx is read in the browser and never leaves the machine.
+ */
+const FORM_MEDIA_TYPES = [...MEDIA_TYPES, "application/pdf"] as const;
 
 app.post("/api/scan", async (req, res) => {
   if (!visionConfigured()) {
@@ -276,14 +289,21 @@ app.get("/api/forms/fields", (_req, res) => {
 });
 
 /**
- * Reads a photographed Ficha de Diagnóstico.
+ * Reads a photographed — or uploaded — Ficha de Diagnóstico.
+ *
+ * **A job, not a wait.** The first real form anyone tried came back as a
+ * bare Cloudflare 502: the read outlasted the tunnel's patience, and what
+ * the clinician saw was the tunnel's error page, not ours. Same lesson as
+ * calculations, same remedy — start the work, return a ticket, let the app
+ * ask. Every exchange is then short, which is the only thing anything
+ * sitting in between cares about.
  *
  * Nothing is stored by this route. It returns what the model made of the
  * page, including a list of what it could not read, and the clinician
  * reviews all of it before anything reaches the database — which matters
  * more here than anywhere else in the app, because this is handwriting.
  */
-app.post("/api/forms/scan", async (req, res) => {
+app.post("/api/forms/scan/jobs", (req, res) => {
   if (!formScanConfigured()) {
     res.status(503).json({
       error:
@@ -296,18 +316,23 @@ app.post("/api/forms/scan", async (req, res) => {
     res.status(400).json({ error: "imageBase64 must be a non-empty base64 string" });
     return;
   }
-  if (!MEDIA_TYPES.includes(mediaType)) {
-    res.status(400).json({ error: `mediaType must be one of: ${MEDIA_TYPES.join(", ")}` });
+  if (!FORM_MEDIA_TYPES.includes(mediaType)) {
+    res.status(400).json({ error: `mediaType must be one of: ${FORM_MEDIA_TYPES.join(", ")}` });
     return;
   }
-  try {
-    res.json(await scanForm(imageBase64, mediaType as MediaType));
-  } catch (err) {
-    // Deliberately not logging the image or the model's output: a filled
-    // form is the most identifying thing this app handles.
-    console.error("Form scan failed:", err instanceof Error ? err.message : err);
-    res.status(502).json({ error: err instanceof Error ? err.message : "Could not read that form." });
+  res.status(202).json({ id: startFormScan(imageBase64, mediaType as FormMediaType) });
+});
+
+app.get("/api/forms/scan/jobs/:id", (req, res) => {
+  const job = readFormScanJob(req.params.id);
+  if (!job) {
+    res.status(404).json({ error: "That form scan has expired or never existed." });
+    return;
   }
+  // Deliberately not logging the image or the model's output: a filled form
+  // is the most identifying thing this app handles.
+  if (job.status === "failed") console.error("Form scan failed:", job.error);
+  res.json(job);
 });
 
 /**

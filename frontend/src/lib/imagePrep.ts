@@ -33,11 +33,25 @@ export async function prepareImage(blob: Blob): Promise<PreparedImage> {
     );
   });
 
-  const buffer = new Uint8Array(await encoded.arrayBuffer());
+  return { base64: bytesToBase64(new Uint8Array(await encoded.arrayBuffer())), mediaType: "image/jpeg" };
+}
+
+function bytesToBase64(buffer: Uint8Array): string {
   let binary = "";
-  // Chunked to stay well clear of the argument-count limit on large images.
+  // Chunked to stay well clear of the argument-count limit on large inputs.
   for (let i = 0; i < buffer.length; i += 8192) {
     binary += String.fromCharCode(...buffer.subarray(i, i + 8192));
   }
-  return { base64: btoa(binary), mediaType: "image/jpeg" };
+  return btoa(binary);
+}
+
+/**
+ * A file as base64, untouched.
+ *
+ * For a PDF, which is sent to the model as the document it is — there is no
+ * downscaling to do, and re-encoding it would only lose the text layer that
+ * makes a PDF read better than a photograph in the first place.
+ */
+export async function fileToBase64(file: Blob): Promise<string> {
+  return bytesToBase64(new Uint8Array(await file.arrayBuffer()));
 }
