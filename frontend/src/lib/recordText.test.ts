@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { consultationForRecord } from "./consultation";
 import { emptyRow } from "./eyeRow";
 import type { MedicalRecordInput } from "./medicalRecord";
 import { recordsToSource, recordToHtml, recordToText } from "./recordText";
@@ -83,6 +84,125 @@ describe("record as pasteable text", () => {
     expect(text).not.toContain("Lens Factor");
     expect(text).not.toContain("Índice K");
     expect(text.trimEnd().endsWith("D")).toBe(true);
+  });
+});
+
+/**
+ * The record once the exam has been matched to the consultation the patient
+ * had weeks earlier — the whole point of storing the form.
+ */
+describe("record with a consultation attached", () => {
+  const MATCHED: MedicalRecordInput = {
+    ...RECORD,
+    consultation: {
+      seenOn: "2026-07-04",
+      retina: { finding: "OPACIDADE DE MEIOS." },
+      preOp: ["DILATAÇÃO PUPILAR INSUFICIENTE", "SUSPEITA DE IFIS"],
+    },
+  };
+
+  /**
+   * The correction this feature exists to make. Unmatched, the record states
+   * "MEIOS TRANSPARENTES" for every patient — the exact opposite of what
+   * this examiner wrote on the paper.
+   */
+  it("reports the fundus the examiner recorded, not the standard wording", () => {
+    const text = recordToText(MATCHED);
+    expect(text).toContain("MAPEAMENTO RETINA:");
+    expect(text).toContain("OPACIDADE DE MEIOS.");
+    expect(text).not.toContain("MEIOS TRANSPARENTES");
+    // And not per eye: one recorded finding, not the same line twice.
+    expect(text.match(/OPACIDADE DE MEIOS/g)).toHaveLength(1);
+  });
+
+  it("puts the pre-operative findings above the measurements", () => {
+    const text = recordToText(MATCHED);
+    expect(text).toContain("ACHADOS PRÉ-OPERATÓRIOS:");
+    expect(text).toContain("DILATAÇÃO PUPILAR INSUFICIENTE");
+    expect(text.indexOf("ACHADOS PRÉ-OPERATÓRIOS:")).toBeLessThan(text.indexOf("BIOMETRIA:"));
+  });
+
+  it("says which consultation the findings came from", () => {
+    expect(recordToText(MATCHED)).toContain("Da consulta de 04/07/2026.");
+  });
+
+  it("carries a written finding alongside the ticked one", () => {
+    const text = recordToText({
+      ...MATCHED,
+      consultation: {
+        ...MATCHED.consultation!,
+        retina: { finding: "SEM ALTERAÇÕES.", note: "drusas maculares" },
+      },
+    });
+    expect(text).toContain("SEM ALTERAÇÕES. drusas maculares");
+  });
+
+  /**
+   * A consultation where nothing relevant was ticked must leave the record
+   * exactly as it was — an empty heading asserts that someone looked and
+   * found nothing.
+   */
+  it("prints no pre-operative block when the form recorded nothing", () => {
+    const text = recordToText({ ...RECORD, consultation: { preOp: [] } });
+    expect(text).not.toContain("ACHADOS PRÉ-OPERATÓRIOS");
+    // ...and the fundus falls back to the template, which is honest here.
+    expect(text).toContain("MEIOS TRANSPARENTES");
+  });
+
+  /**
+   * The regression that matters: every record produced without a stored
+   * consultation — which is every record until one is attached — must be
+   * byte-for-byte what it was before this feature existed.
+   */
+  it("leaves an unmatched record untouched", () => {
+    expect(recordToText({ ...RECORD, consultation: undefined })).toBe(recordToText(RECORD));
+    expect(recordToHtml({ ...RECORD, consultation: undefined })).toBe(recordToHtml(RECORD));
+  });
+
+  /**
+   * The whole path, from the JSON a consultation is actually stored as to
+   * the text a clinician pastes into the hospital system. The form below is
+   * exactly what `GET /api/patients/:id` returns for a saved Ficha de
+   * Diagnóstico.
+   */
+  it("carries a stored form through to the pasted record", () => {
+    const stored = {
+      identificacao: { paciente: "Ana Souza" },
+      comorbidades: { dm2: "Sim", has: "Não", tansulosina: "Sim" },
+      biomicroscopia: {
+        ifis: "Suspeita",
+        dilatacaoPupilar: "Insuficiente",
+        camaraAnterior: "Formada",
+      },
+      catarata: { nuclear: "Grau III" },
+      fundoscopia: { mapeamentoRetina: "Opacidade de meios" },
+    };
+    const text = recordToText({
+      ...RECORD,
+      consultation: consultationForRecord(stored, "pt", "2026-07-04"),
+    });
+
+    expect(text).toContain("DILATAÇÃO PUPILAR INSUFICIENTE");
+    expect(text).toContain("EM USO DE TANSULOSINA / ALFABLOQUEADOR");
+    expect(text).toContain("CATARATA NUCLEAR GRAU III");
+    expect(text).toContain("OPACIDADE DE MEIOS.");
+    expect(text).toContain("Da consulta de 04/07/2026.");
+    // The two that must not appear: a "Não" answer, and a normal finding.
+    expect(text).not.toContain("HAS");
+    expect(text).not.toContain("CÂMARA ANTERIOR");
+    // And the measurements are untouched by any of it.
+    expect(text).toContain("AXL: 23.09 mm");
+    expect(text).toContain("OD - LIO recomendada: 23.00 D");
+  });
+
+  it("renders the block as the editor's own markup", () => {
+    const html = recordToHtml(MATCHED);
+    expect(html).toContain(
+      '<p><strong><span style="font-size:16px;">ACHADOS PRÉ-OPERATÓRIOS:</span></strong></p>',
+    );
+    expect(html).toContain('<p><span style="font-size:16px;">SUSPEITA DE IFIS</span></p>');
+    expect(html).toContain("<p>OPACIDADE DE MEIOS.</p>");
+    expect(html).not.toMatch(/class=|<table|<div/);
   });
 });
 

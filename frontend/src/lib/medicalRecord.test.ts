@@ -64,6 +64,34 @@ describe("medical record layout", () => {
     expect(text).toContain("Recommended IOL: not reported by the calculator");
   });
 
+  /**
+   * The consultation, on the same page as the power. That is the point of
+   * joining the two visits: the surgeon reads what the examiner found
+   * without going to look for a sheet of paper in another room.
+   */
+  it("prints the consultation's findings above the measurements", () => {
+    const text = textOf({
+      ...RECORD,
+      consultation: {
+        seenOn: "2026-07-04",
+        retina: { finding: "MEDIA OPACITY." },
+        preOp: ["INSUFFICIENT PUPIL DILATION", "TAKING TAMSULOSIN / ALPHA-BLOCKER"],
+      },
+    });
+    expect(text).toContain("PRE-OPERATIVE FINDINGS:");
+    expect(text).toContain("• INSUFFICIENT PUPIL DILATION");
+    expect(text).toContain("From the consultation of 04/07/2026.");
+    expect(text).toContain("RETINAL MAPPING: MEDIA OPACITY.");
+    expect(text.indexOf("PRE-OPERATIVE FINDINGS:")).toBeLessThan(text.indexOf("44.16 D"));
+  });
+
+  it("prints no such block for a record with no consultation attached", () => {
+    expect(textOf(RECORD)).not.toContain("PRE-OPERATIVE FINDINGS");
+    expect(textOf({ ...RECORD, consultation: { preOp: [] } })).not.toContain(
+      "PRE-OPERATIVE FINDINGS",
+    );
+  });
+
   it("records only the recommendation, not the other IOL powers", () => {
     const text = textOf(RECORD);
     expect(text).not.toContain("23.00");

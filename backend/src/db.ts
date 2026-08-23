@@ -379,7 +379,14 @@ export interface ConsultationInput extends PatientIdentity {
   /** Recorded on the visit. Never used to find anyone — see the file header. */
   prontuario?: string;
   seenOn?: string;
-  form: unknown;
+  /**
+   * The reviewed form. **Omit it** to register the patient without a visit —
+   * which is what happens when an exam is stored for someone whose form was
+   * never photographed. A blank consultation row would otherwise sit in the
+   * export and count itself in the statistics as a visit where nothing was
+   * found.
+   */
+  form?: unknown;
   /** Save even though the CPF's stored name disagrees with this one. */
   confirmMerge?: boolean;
 }
@@ -440,31 +447,90 @@ export function saveConsultation(input: ConsultationInput): PatientRecord {
       : conn.prepare("SELECT * FROM patients WHERE id = last_insert_rowid()").get()
   ) as Record<string, unknown>;
 
-  conn
-    .prepare(
-      `INSERT INTO consultations (patient_id, seen_on, prontuario, data, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    )
-    .run(
-      patient.id as number,
-      input.seenOn ?? null,
-      input.prontuario ? prontuarioKey(input.prontuario) : null,
-      JSON.stringify(input.form),
-      now,
-    );
+  if (input.form !== undefined) {
+    conn
+      .prepare(
+        `INSERT INTO consultations (patient_id, seen_on, prontuario, data, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        patient.id as number,
+        input.seenOn ?? null,
+        input.prontuario ? prontuarioKey(input.prontuario) : null,
+        JSON.stringify(input.form),
+        now,
+      );
+  }
 
   return toPatient(patient);
 }
 
-export function saveExam(input: { patientId: number; measuredOn?: string; exam: unknown }): void {
-  connection()
+/**
+ * The other half of the record: what was measured on exam day.
+ *
+ * Returns the row it wrote, so the caller can tell a stored exam from one
+ * that only exists on screen.
+ */
+export function saveExam(input: {
+  patientId: number;
+  measuredOn?: string;
+  exam: unknown;
+}): StoredExam {
+  const now = new Date().toISOString();
+  const conn = connection();
+  conn
     .prepare(`INSERT INTO exams (patient_id, measured_on, data, created_at) VALUES (?, ?, ?, ?)`)
-    .run(
-      input.patientId,
-      input.measuredOn ?? null,
-      JSON.stringify(input.exam),
-      new Date().toISOString(),
-    );
+    .run(input.patientId, input.measuredOn ?? null, JSON.stringify(input.exam), now);
+  const row = conn.prepare("SELECT * FROM exams WHERE id = last_insert_rowid()").get() as Record<
+    string,
+    unknown
+  >;
+  return toExam(row);
+}
+
+export interface StoredExam {
+  id: number;
+  measuredOn?: string;
+  exam: unknown;
+  createdAt: string;
+}
+
+function toExam(row: Record<string, unknown>): StoredExam {
+  return {
+    id: row.id as number,
+    measuredOn: (row.measured_on as string | null) ?? undefined,
+    exam: JSON.parse(row.data as string),
+    createdAt: row.created_at as string,
+  };
+}
+
+export function examsFor(patientId: number): StoredExam[] {
+  const rows = connection()
+    .prepare(ORDERED_BY_VISIT("exams", "measured_on"))
+    .all(patientId) as Record<string, unknown>[];
+  return rows.map(toExam);
+}
+
+/**
+ * Newest first, by the day it happened rather than the day it was typed in.
+ *
+ * Both matter and they are not the same: a form photographed weeks late
+ * would otherwise look like the most recent visit, and the match screen
+ * takes the first row as *the* consultation. The id breaks ties, because
+ * two rows written in the same millisecond otherwise come back in whatever
+ * order SQLite feels like — which is exactly the kind of "usually right"
+ * that fails once and confusingly.
+ */
+function ORDERED_BY_VISIT(table: "consultations" | "exams", dateColumn: string): string {
+  return `SELECT * FROM ${table} WHERE patient_id = ?
+          ORDER BY COALESCE(${dateColumn}, created_at) DESC, id DESC`;
+}
+
+export function findPatient(id: number): PatientRecord | null {
+  const row = connection().prepare("SELECT * FROM patients WHERE id = ?").get(id) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? toPatient(row) : null;
 }
 
 export interface StoredConsultation {
@@ -477,7 +543,7 @@ export interface StoredConsultation {
 
 export function consultationsFor(patientId: number): StoredConsultation[] {
   const rows = connection()
-    .prepare("SELECT * FROM consultations WHERE patient_id = ? ORDER BY created_at DESC")
+    .prepare(ORDERED_BY_VISIT("consultations", "seen_on"))
     .all(patientId) as Record<string, unknown>[];
   return rows.map((row) => ({
     id: row.id as number,
@@ -511,11 +577,14 @@ export function exportAll(): unknown {
   const patients = listPatients();
   return {
     exportedAt: new Date().toISOString(),
-    version: 2,
+    version: 3,
     patients: patients.map((patient) => ({
       ...patient,
       cpfValid: patient.cpf ? isValidCpf(patient.cpf) : undefined,
       consultations: consultationsFor(patient.id),
+      // Both halves, or the backup restores half a record and nobody
+      // notices until they go looking for the measurements.
+      exams: examsFor(patient.id),
     })),
   };
 }

@@ -144,6 +144,38 @@ const en = {
   formSeenOn: "Date of this consultation",
   formSaved: (name: string, how: string) =>
     `Saved: ${name} (${how}). On exam day the biometry will find this consultation by that.`,
+  matchTitle: "Attach the consultation from this patient's first visit",
+  matchHint:
+    "If this patient's form was photographed on an earlier visit, the findings from it go into this record — including what the examiner actually saw on fundoscopy, instead of the standard wording.",
+  matchCpfLabel: "CPF",
+  matchDobLabel: "Date of birth",
+  matchSearch: "Look this patient up",
+  matchSearching: "Looking…",
+  matchNone:
+    "No stored consultation for this patient. The record is produced from the measurements alone, exactly as before.",
+  matchStoreNew: "Store this exam under a new patient",
+  matchStoredNew: (name: string) =>
+    `${name} is now on file with this exam. When their form is photographed, it will attach to the same patient.`,
+  matchNoKey: "Enter a CPF, or the date of birth to go with the name above.",
+  matchByCpf: "Found by CPF.",
+  matchByBirth: "Found by name and date of birth.",
+  matchMismatch: (stored: string, scanned: string) =>
+    `⚠ That CPF belongs to ${stored}, not ${scanned || "this patient"}. Usually one misread digit. Nothing has been attached — check the number before going on.`,
+  matchCandidates: (count: number) =>
+    `${count} patients share that name. Pick the right one — the date of birth and last visit are shown to tell them apart.`,
+  matchNoConsultation: "That patient has no consultation stored yet, only this exam.",
+  matchStoredSide: "Stored consultation",
+  matchMeasuredSide: "Measured today",
+  matchNothingRecorded: "Nothing was ticked on that form that a record would carry.",
+  matchConfirm: "Yes — this is the same patient",
+  matchAttached: (name: string) =>
+    `Attached to ${name}. The findings below are in the record, and this exam is stored against that patient.`,
+  matchDetach: "Undo",
+  matchExamSaved: "This exam is now stored with the patient.",
+  matchExamFailed:
+    "The consultation was attached to the record, but this exam could not be stored on the server.",
+  matchNoCpfInList:
+    "A spreadsheet carries no CPF, so a patient can only be looked up here by name — and a name is shared. Check the date of birth before attaching.",
   databaseExport: "Download a backup of the database",
   listImportLabel: "Or import a patient list (.xlsx or .csv)",
   listImporting: "Reading the list…",
@@ -238,6 +270,34 @@ const en = {
   recordTopography: "TOPOGRAPHY:",
   recordLensCalculation: "LENS CALCULATION:",
   recordLensLine: "Recommended IOL",
+
+  /**
+   * The consultation, as it reads in a record.
+   *
+   * Only what was actually ticked reaches these lines. An unanswered box
+   * produces nothing at all — a record is read as a set of observations,
+   * and "not recorded" must never come out looking like "normal".
+   */
+  recordPreOp: "PRE-OPERATIVE FINDINGS:",
+  recordConsultationOn: (date: string) => `From the consultation of ${date}.`,
+  recordRetinaFinding: {
+    "Sem alterações": "NO ALTERATIONS.",
+    "Opacidade de meios": "MEDIA OPACITY.",
+  } as Record<string, string>,
+  recordFlagIfis: (level: string): string =>
+    level === "Presente" ? "FLOPPY IRIS SYNDROME (IFIS) PRESENT" : "SUSPECTED FLOPPY IRIS (IFIS)",
+  recordFlagDilation: (level: string): string =>
+    level === "Insuficiente" ? "INSUFFICIENT PUPIL DILATION" : "FAIR PUPIL DILATION",
+  recordFlagTansulosin: "TAKING TAMSULOSIN / ALPHA-BLOCKER",
+  recordFlagDm2: "DM2",
+  recordFlagHas: "SYSTEMIC HYPERTENSION",
+  recordFlagGlaucoma: "GLAUCOMA",
+  recordFlagPreviousSurgery: "PREVIOUS OCULAR SURGERY",
+  recordFlagAnteriorSegment: (finding: string) => `ANTERIOR SEGMENT: ${finding}`,
+  recordFlagCataractNuclear: (grade: string) => `NUCLEAR CATARACT ${grade.toUpperCase()}`,
+  recordFlagCataractCortical: (grade: string) => `${grade.toUpperCase()} CORTICAL CATARACT`,
+  recordFlagCataractSubcapsular: "POSTERIOR SUBCAPSULAR CATARACT",
+  recordFlagCataractOther: (kind: string) => `${kind.toUpperCase()} CATARACT`,
   recordCopy: "Copy record",
   recordCopySource: "Copy as source code (HTML)",
   recordSourceHint:
@@ -408,6 +468,38 @@ const pt: Strings = {
   formSeenOn: "Data desta consulta",
   formSaved: (name: string, how: string) =>
     `Salvo: ${name} (${how}). No dia do exame, a biometria encontra esta consulta por isso.`,
+  matchTitle: "Anexar a consulta da primeira visita deste paciente",
+  matchHint:
+    "Se a ficha deste paciente foi fotografada em uma consulta anterior, os achados dela entram neste prontuário — inclusive o que o examinador realmente viu na fundoscopia, no lugar do texto padrão.",
+  matchCpfLabel: "CPF",
+  matchDobLabel: "Data de nascimento",
+  matchSearch: "Procurar este paciente",
+  matchSearching: "Procurando…",
+  matchNone:
+    "Nenhuma consulta guardada para este paciente. O prontuário sai apenas com as medidas, como antes.",
+  matchStoreNew: "Guardar este exame em um paciente novo",
+  matchStoredNew: (name: string) =>
+    `${name} agora está cadastrado com este exame. Quando a ficha for fotografada, ela se junta a esse mesmo paciente.`,
+  matchNoKey: "Informe o CPF, ou a data de nascimento para acompanhar o nome acima.",
+  matchByCpf: "Encontrado pelo CPF.",
+  matchByBirth: "Encontrado pelo nome e data de nascimento.",
+  matchMismatch: (stored: string, scanned: string) =>
+    `⚠ Esse CPF é de ${stored}, não de ${scanned || "este paciente"}. Normalmente é um dígito lido errado. Nada foi anexado — confira o número antes de seguir.`,
+  matchCandidates: (count: number) =>
+    `${count} pacientes têm esse nome. Escolha o certo — a data de nascimento e a última consulta estão aí para diferenciar.`,
+  matchNoConsultation: "Esse paciente ainda não tem consulta guardada, apenas este exame.",
+  matchStoredSide: "Consulta guardada",
+  matchMeasuredSide: "Medido hoje",
+  matchNothingRecorded: "Nada foi marcado naquela ficha que o prontuário fosse carregar.",
+  matchConfirm: "Sim — é o mesmo paciente",
+  matchAttached: (name: string) =>
+    `Anexado a ${name}. Os achados abaixo estão no prontuário, e este exame ficou guardado nesse paciente.`,
+  matchDetach: "Desfazer",
+  matchExamSaved: "Este exame agora está guardado junto ao paciente.",
+  matchExamFailed:
+    "A consulta foi anexada ao prontuário, mas não foi possível guardar este exame no servidor.",
+  matchNoCpfInList:
+    "Uma planilha não traz CPF, então aqui o paciente só pode ser procurado pelo nome — e nome se repete. Confira a data de nascimento antes de anexar.",
   databaseExport: "Baixar um backup do banco de dados",
   listImportLabel: "Ou importe uma lista de pacientes (.xlsx ou .csv)",
   listImporting: "Lendo a lista…",
@@ -502,6 +594,27 @@ const pt: Strings = {
   recordTopography: "TOPOGRAFIA:",
   recordLensCalculation: "CALCULO DA LENTE:",
   recordLensLine: "LIO recomendada",
+
+  recordPreOp: "ACHADOS PRÉ-OPERATÓRIOS:",
+  recordConsultationOn: (date: string) => `Da consulta de ${date}.`,
+  recordRetinaFinding: {
+    "Sem alterações": "SEM ALTERAÇÕES.",
+    "Opacidade de meios": "OPACIDADE DE MEIOS.",
+  } as Record<string, string>,
+  recordFlagIfis: (level: string) =>
+    level === "Presente" ? "SÍNDROME DA ÍRIS FLÁCIDA (IFIS) PRESENTE" : "SUSPEITA DE IFIS",
+  recordFlagDilation: (level: string) =>
+    level === "Insuficiente" ? "DILATAÇÃO PUPILAR INSUFICIENTE" : "DILATAÇÃO PUPILAR REGULAR",
+  recordFlagTansulosin: "EM USO DE TANSULOSINA / ALFABLOQUEADOR",
+  recordFlagDm2: "DM2",
+  recordFlagHas: "HAS",
+  recordFlagGlaucoma: "GLAUCOMA",
+  recordFlagPreviousSurgery: "CIRURGIA OCULAR PRÉVIA",
+  recordFlagAnteriorSegment: (finding: string) => `SEGMENTO ANTERIOR: ${finding}`,
+  recordFlagCataractNuclear: (grade: string) => `CATARATA NUCLEAR ${grade.toUpperCase()}`,
+  recordFlagCataractCortical: (grade: string) => `CATARATA CORTICAL ${grade.toUpperCase()}`,
+  recordFlagCataractSubcapsular: "CATARATA SUBCAPSULAR POSTERIOR",
+  recordFlagCataractOther: (kind: string) => `CATARATA ${kind.toUpperCase()}`,
   recordCopy: "Copiar prontuário",
   recordCopySource: "Copiar código-fonte (HTML)",
   recordSourceHint:

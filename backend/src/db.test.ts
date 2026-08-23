@@ -9,9 +9,11 @@ import {
   closeDatabase,
   consultationsFor,
   deletePatient,
+  examsFor,
   exportAll,
   findByCpf,
   findByName,
+  findPatient,
   listPatients,
   matchPatient,
   nameKey,
@@ -332,14 +334,97 @@ describe("the database on disk", () => {
   });
 
   it("exports everything as one document, for the backup that doesn't exist yet", () => {
-    saveConsultation({ cpf: ANA, name: "Ana Souza", prontuario: "1234567", form: FORM });
+    const patient = saveConsultation({
+      cpf: ANA,
+      name: "Ana Souza",
+      prontuario: "1234567",
+      form: FORM,
+    });
+    saveExam({ patientId: patient.id, measuredOn: "2026-09-01", exam: { od: { k1: 43.23 } } });
+
     const dump = exportAll() as {
-      patients: { cpf: string; cpfValid: boolean; consultations: { prontuario?: string }[] }[];
+      patients: {
+        cpf: string;
+        cpfValid: boolean;
+        consultations: { prontuario?: string }[];
+        exams: { measuredOn?: string }[];
+      }[];
     };
     expect(dump.patients).toHaveLength(1);
     expect(dump.patients[0].cpf).toBe("11144477735");
     expect(dump.patients[0].cpfValid).toBe(true);
     expect(dump.patients[0].consultations[0].prontuario).toBe("1234567");
+    // Both halves. A backup carrying only the consultation restores half a
+    // record, and nobody finds out until they look for the measurements.
+    expect(dump.patients[0].exams[0].measuredOn).toBe("2026-09-01");
+  });
+});
+
+describe("the exam, joined to the patient it belongs to", () => {
+  it("keeps what was measured, newest first", () => {
+    const patient = saveConsultation({ cpf: ANA, name: "Ana Souza", form: FORM });
+    saveExam({ patientId: patient.id, measuredOn: "2026-09-01", exam: { od: { k1: 43.23 } } });
+    saveExam({ patientId: patient.id, measuredOn: "2026-10-01", exam: { od: { k1: 43.5 } } });
+
+    const exams = examsFor(patient.id);
+    expect(exams).toHaveLength(2);
+    expect(exams.map((e) => e.measuredOn)).toEqual(["2026-10-01", "2026-09-01"]);
+    expect(exams[0].exam).toEqual({ od: { k1: 43.5 } });
+  });
+
+  /**
+   * The match screen takes the first consultation as *the* one. A form
+   * photographed weeks after the visit must not therefore become the
+   * patient's most recent consultation.
+   */
+  it("orders consultations by the day of the visit, not the day it was typed in", () => {
+    const patient = saveConsultation({
+      cpf: ANA,
+      name: "Ana Souza",
+      seenOn: "2026-07-04",
+      form: { note: "recent visit" },
+    });
+    saveConsultation({
+      cpf: ANA,
+      name: "Ana Souza",
+      seenOn: "2026-02-01",
+      form: { note: "old form, entered late" },
+    });
+
+    const visits = consultationsFor(patient.id);
+    expect(visits.map((v) => v.seenOn)).toEqual(["2026-07-04", "2026-02-01"]);
+  });
+
+  it("hands back the row it wrote, so a stored exam is distinguishable", () => {
+    const patient = saveConsultation({ cpf: ANA, name: "Ana Souza", form: FORM });
+    const stored = saveExam({ patientId: patient.id, exam: { od: { k1: 43.23 } } });
+    expect(stored.id).toBeGreaterThan(0);
+    expect(stored.measuredOn).toBeUndefined();
+  });
+
+  /**
+   * A patient whose paper was never photographed still has an exam worth
+   * keeping. Registering them must not invent a visit — a blank
+   * consultation would sit in the export and count itself in the
+   * statistics as an examination where nothing was found.
+   */
+  it("registers a patient with no visit when no form is given", () => {
+    const patient = saveConsultation({ cpf: ANA, name: "Ana Souza" });
+    expect(consultationsFor(patient.id)).toHaveLength(0);
+
+    saveExam({ patientId: patient.id, exam: { od: { k1: 43.23 } } });
+    expect(examsFor(patient.id)).toHaveLength(1);
+
+    // ...and the form, when it is finally photographed, joins this patient.
+    const same = saveConsultation({ cpf: ANA, name: "Ana Souza", form: FORM });
+    expect(same.id).toBe(patient.id);
+    expect(consultationsFor(patient.id)).toHaveLength(1);
+  });
+
+  it("finds a patient by id, and says so when there is none", () => {
+    const patient = saveConsultation({ cpf: ANA, name: "Ana Souza", form: FORM });
+    expect(findPatient(patient.id)?.name).toBe("Ana Souza");
+    expect(findPatient(9999)).toBeNull();
   });
 });
 

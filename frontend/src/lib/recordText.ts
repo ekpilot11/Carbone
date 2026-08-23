@@ -1,3 +1,4 @@
+import { formatRecordDate } from "./consultation";
 import { STRINGS, type Lang } from "./i18n";
 import { closestToPlano, type MedicalRecordInput } from "./medicalRecord";
 
@@ -35,11 +36,21 @@ interface EyeLines {
 
 interface RecordModel {
   opening: string;
+  /**
+   * The consultation's findings, when this exam was matched to one. Empty
+   * otherwise, and the block is skipped entirely — there is nothing to say.
+   */
+  preOpHeading: string;
+  preOpFrom?: string;
+  preOp: string[];
   retinaHeading: string;
   /**
-   * The practice's standard fundus wording. It goes in as the starting
-   * point for a section the clinician edits in the hospital system itself —
-   * this app has no view of a retina and never claims to.
+   * The fundus section.
+   *
+   * With a consultation attached this is **what the examiner recorded**.
+   * Without one it is the practice's standard wording, per eye, as a
+   * starting point for the clinician to edit in the hospital system — this
+   * app has no view of a retina and never claims to.
    */
   retina: { label: string; text: string }[];
   biometryHeading: string;
@@ -53,10 +64,27 @@ interface RecordModel {
 function buildModel(input: MedicalRecordInput): RecordModel {
   const t = STRINGS[input.lang];
 
-  const retina = (["OD", "OS"] as const).map((side) => ({
-    label: `${eyeLabel(input.lang, side)}:`,
-    text: t.recordRetinaDefault,
-  }));
+  /**
+   * The correction this feature exists to make.
+   *
+   * Unmatched, every record printed "MEIOS TRANSPARENTES ; RETINA APLICADA
+   * 360 ; …" for both eyes — a template to edit, but printed as an
+   * observation, and for a patient whose form records *opacidade de meios*
+   * it stated the opposite of what the examiner wrote. With the
+   * consultation attached, the recorded finding goes in instead.
+   */
+  const recorded = input.consultation?.retina;
+  const retina = recorded
+    ? [
+        {
+          label: "",
+          text: recorded.note ? `${recorded.finding} ${recorded.note}` : recorded.finding,
+        },
+      ]
+    : (["OD", "OS"] as const).map((side) => ({
+        label: `${eyeLabel(input.lang, side)}:`,
+        text: t.recordRetinaDefault,
+      }));
 
   const biometry: EyeLines[] = [];
   const topography: EyeLines[] = [];
@@ -92,6 +120,11 @@ function buildModel(input: MedicalRecordInput): RecordModel {
 
   return {
     opening: t.recordOpeningLine,
+    preOpHeading: t.recordPreOp,
+    preOpFrom: input.consultation?.seenOn
+      ? t.recordConsultationOn(formatRecordDate(input.consultation.seenOn))
+      : undefined,
+    preOp: input.consultation?.preOp ?? [],
     retinaHeading: t.recordRetina,
     retina,
     biometryHeading: t.recordBiometry,
@@ -108,9 +141,19 @@ export function recordToText(input: MedicalRecordInput): string {
   const m = buildModel(input);
   const blocks: string[] = [m.opening];
 
+  if (m.preOp.length > 0) {
+    blocks.push(
+      [m.preOpHeading, "", ...m.preOp, ...(m.preOpFrom ? ["", m.preOpFrom] : [])].join("\n"),
+    );
+  }
+
   if (m.retina.length > 0) {
     blocks.push(
-      [m.retinaHeading, "", ...m.retina.map((entry) => `${entry.label} ${entry.text}`)].join("\n"),
+      [
+        m.retinaHeading,
+        "",
+        ...m.retina.map((entry) => (entry.label === "" ? entry.text : `${entry.label} ${entry.text}`)),
+      ].join("\n"),
     );
   }
   for (const [heading, eyes] of [
@@ -150,13 +193,22 @@ export function recordToHtml(input: MedicalRecordInput): string {
   const m = buildModel(input);
   const parts: string[] = [`<p>${sized(m.opening, BODY_PX)}</p>`, SPACER];
 
+  if (m.preOp.length > 0) {
+    parts.push(`<p><strong>${sized(m.preOpHeading, BODY_PX)}</strong></p>`, SPACER);
+    for (const finding of m.preOp) parts.push(`<p>${sized(finding, BODY_PX)}</p>`);
+    if (m.preOpFrom) parts.push(SPACER, `<p>${sized(m.preOpFrom, BODY_PX)}</p>`);
+    parts.push(SPACER, SPACER);
+  }
+
   if (m.retina.length > 0) {
     // The clinic writes this heading plain and the eye label bold, inline
     // with its findings — unlike the measurement sections below.
     parts.push(`<p>${escapeHtml(m.retinaHeading)}</p>`, SPACER);
     for (const entry of m.retina) {
       parts.push(
-        `<p><strong>${escapeHtml(entry.label)}&nbsp;</strong>${escapeHtml(entry.text)}</p>`,
+        entry.label === ""
+          ? `<p>${escapeHtml(entry.text)}</p>`
+          : `<p><strong>${escapeHtml(entry.label)}&nbsp;</strong>${escapeHtml(entry.text)}</p>`,
         SPACER,
       );
     }

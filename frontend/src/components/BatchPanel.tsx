@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChallengeOverlay } from "./ChallengeOverlay";
+import { ConsultationMatch } from "./ConsultationMatch";
+import type { AttachedConsultation } from "../lib/consultation";
 import {
   calculateBarrett,
   parkHandoff,
@@ -230,6 +232,7 @@ export function BatchPanel({
         recommended: side === "OD" ? item.result?.recommended?.od : item.result?.recommended?.os,
         rows: (side === "OD" ? item.result?.tables?.od : item.result?.tables?.os) ?? [],
       })),
+      consultation: item.attached?.consultation,
     };
   }
 
@@ -359,6 +362,9 @@ export function BatchPanel({
             onField={(side, field, value) => updateField(item.id, side, field, value)}
             onDownload={() => downloadOne(item)}
             onCopy={(asSource) => copyOne(item, asSource)}
+            lang={lang}
+            record={recordFor(item)}
+            onAttach={(attached) => update(item.id, { attached: attached ?? undefined })}
           />
         ))}
       </ol>
@@ -368,15 +374,30 @@ export function BatchPanel({
 
 interface BatchRowProps {
   t: Strings;
+  lang: Lang;
   index: number;
   item: BatchItem;
+  /** Null until this row has been calculated; the match panel needs the values. */
+  record: MedicalRecordInput | null;
   onName: (name: string) => void;
   onField: (side: EyeSide, field: keyof EyeRowState, value: string) => void;
   onDownload: () => void;
   onCopy: (asSource: boolean) => void;
+  onAttach: (attached: AttachedConsultation | null) => void;
 }
 
-function BatchRow({ t, index, item, onName, onField, onDownload, onCopy }: BatchRowProps) {
+function BatchRow({
+  t,
+  lang,
+  index,
+  item,
+  record,
+  onName,
+  onField,
+  onDownload,
+  onCopy,
+  onAttach,
+}: BatchRowProps) {
   const statusLabel: Record<BatchItem["status"], string> = {
     scanning: t.batchStatusScanning,
     ready: t.batchStatusReady,
@@ -499,6 +520,21 @@ function BatchRow({ t, index, item, onName, onField, onDownload, onCopy }: Batch
             </button>
           </span>
         </div>
+      )}
+
+      {/* A spreadsheet carries no CPF, so a row can only be looked up by
+          name — which is shared. The panel says so, and still refuses to
+          pick between candidates on its own. */}
+      {item.status === "done" && record && (
+        <ConsultationMatch
+          t={t}
+          lang={lang}
+          patientName={item.patientName}
+          record={record}
+          attached={item.attached ?? null}
+          onAttach={onAttach}
+          nameOnly
+        />
       )}
     </li>
   );

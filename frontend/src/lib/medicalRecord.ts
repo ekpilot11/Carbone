@@ -1,4 +1,5 @@
 import type { IolTableRow } from "./api";
+import { formatRecordDate, type RecordConsultation } from "./consultation";
 import type { EyeRowState } from "./eyeRow";
 import { STRINGS, type Lang, type Strings } from "./i18n";
 import {
@@ -38,6 +39,16 @@ export interface MedicalRecordInput {
   eyes: MedicalRecordEye[];
   /** The record follows the language the app is being used in. */
   lang: Lang;
+  /**
+   * The consultation this exam was matched to, when one was.
+   *
+   * Optional, and absent for every record produced without a stored form —
+   * which is what it was before this existed, and still is when the patient
+   * isn't in the database. Attaching it changes two things: the fundus
+   * section reports what the examiner wrote rather than a template, and the
+   * findings that change how the surgery goes are printed beside the power.
+   */
+  consultation?: RecordConsultation;
 }
 
 const MARGIN = 56;
@@ -110,6 +121,31 @@ export function buildMedicalRecordDocument(input: MedicalRecordInput): PdfDocume
     constants.length > 0 ? `${input.lens.name} (${constants.join(", ")})` : input.lens.name,
   );
   if (input.kIndex) labelled(t.pdfKIndex, input.kIndex);
+
+  // The consultation, when this exam was matched to one. Above the
+  // measurements on purpose: these are the lines that change how the
+  // surgery goes, and they are the reason for joining the two visits.
+  const consultation = input.consultation;
+  if (consultation && (consultation.preOp.length > 0 || consultation.retina)) {
+    y += 16;
+    write(t.recordPreOp, MARGIN, { size: 13, bold: true });
+    y += 6;
+    rules.push({ x1: MARGIN, x2: right, y, gray: 0.6 });
+    y += 18;
+    if (consultation.seenOn) {
+      write(t.recordConsultationOn(formatRecordDate(consultation.seenOn)), MARGIN, { size: 9 });
+      y += LINE;
+    }
+    for (const finding of consultation.preOp) {
+      write(`• ${finding}`, MARGIN, { size: 10 });
+      y += LINE;
+    }
+    if (consultation.retina) {
+      const note = consultation.retina.note ? ` (${consultation.retina.note})` : "";
+      write(`${t.recordRetina} ${consultation.retina.finding}${note}`, MARGIN, { size: 10 });
+      y += LINE;
+    }
+  }
 
   for (const eye of input.eyes) {
     y += 16;

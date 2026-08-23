@@ -375,7 +375,8 @@ export async function savePatient(input: {
   ageYears?: number;
   prontuario?: string;
   seenOn?: string;
-  form: unknown;
+  /** Omit to register the patient without recording a visit. */
+  form?: unknown;
   confirmMerge?: boolean;
 }): Promise<{ patient: StoredPatient; cpfValid?: boolean }> {
   const res = await fetch(`${API_BASE}/api/patients`, {
@@ -394,6 +395,55 @@ export async function savePatient(input: {
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new Error(body?.error ?? `Couldn't save this consultation (${res.status}).`);
+  }
+  return res.json();
+}
+
+export interface StoredConsultation {
+  id: number;
+  seenOn?: string;
+  prontuario?: string;
+  form: Record<string, Record<string, unknown>>;
+  createdAt: string;
+}
+
+export interface StoredExam {
+  id: number;
+  measuredOn?: string;
+  exam: unknown;
+  createdAt: string;
+}
+
+/** One patient with both halves of their record. */
+export async function fetchPatient(id: number): Promise<{
+  patient: StoredPatient;
+  consultations: StoredConsultation[];
+  exams: StoredExam[];
+}> {
+  const res = await fetch(`${API_BASE}/api/patients/${id}`);
+  if (!res.ok) throw new Error(`Couldn't load that patient (${res.status}).`);
+  return res.json();
+}
+
+/**
+ * Stores what was measured, against the patient it belongs to.
+ *
+ * Until this existed the calculation left the app as a download and nothing
+ * here remembered it, so a stored patient was a consultation with a gap
+ * after it.
+ */
+export async function saveExam(
+  patientId: number,
+  input: { measuredOn?: string; exam: unknown },
+): Promise<StoredExam> {
+  const res = await fetch(`${API_BASE}/api/patients/${patientId}/exams`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? `Couldn't save this exam (${res.status}).`);
   }
   return res.json();
 }

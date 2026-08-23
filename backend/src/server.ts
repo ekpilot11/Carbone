@@ -17,8 +17,11 @@ import {
   closeDatabase,
   consultationsFor,
   deletePatient,
+  examsFor,
   exportAll,
+  findPatient,
   listPatients,
+  saveExam,
   matchPatient,
   NameMismatchError,
   openDatabase,
@@ -345,7 +348,9 @@ app.post("/api/patients", (req, res) => {
       ageYears: typeof ageYears === "number" ? ageYears : undefined,
       prontuario: text(prontuario),
       seenOn: text(seenOn),
-      form: form ?? {},
+      // No form means "register this patient", not "record an empty visit"
+      // — the exam screen creates patients whose paper was never scanned.
+      form: form ?? undefined,
       confirmMerge: confirmMerge === true,
     });
     res.status(201).json({
@@ -397,6 +402,54 @@ app.get("/api/patients", (req, res) => {
 
 app.get("/api/patients/:id/consultations", (req, res) => {
   res.json({ consultations: consultationsFor(Number(req.params.id)) });
+});
+
+/**
+ * One patient, both halves.
+ *
+ * The confirm screen shows the stored consultation beside the measurements
+ * that are about to be joined to it, so it needs them together — and a
+ * clinician looking at a patient wants the whole history, not one table.
+ */
+app.get("/api/patients/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const patient = findPatient(id);
+  if (!patient) {
+    res.status(404).json({ error: "No patient with that id." });
+    return;
+  }
+  res.json({ patient, consultations: consultationsFor(id), exams: examsFor(id) });
+});
+
+/**
+ * Stores what was measured on exam day against the patient it belongs to.
+ *
+ * Until now the calculation existed only as a download: the record left the
+ * app and nothing here remembered it. This is what makes a stored patient a
+ * whole record rather than a consultation with a gap after it.
+ */
+app.post("/api/patients/:id/exams", (req, res) => {
+  const id = Number(req.params.id);
+  if (!findPatient(id)) {
+    res.status(404).json({ error: "No patient with that id." });
+    return;
+  }
+  const { measuredOn, exam } = req.body ?? {};
+  if (exam === undefined || exam === null || typeof exam !== "object") {
+    res.status(400).json({ error: "An exam object is required." });
+    return;
+  }
+  try {
+    res.status(201).json(
+      saveExam({
+        patientId: id,
+        measuredOn: typeof measuredOn === "string" && measuredOn !== "" ? measuredOn : undefined,
+        exam,
+      }),
+    );
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Could not save." });
+  }
 });
 
 app.delete("/api/patients/:id", (req, res) => {

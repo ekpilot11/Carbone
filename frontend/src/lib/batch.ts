@@ -1,4 +1,5 @@
 import type { CalculateResponse } from "./api";
+import type { AttachedConsultation } from "./consultation";
 import {
   emptyRow,
   isRowComplete,
@@ -49,6 +50,15 @@ export interface BatchItem {
     kIndex: string;
     rows: Record<EyeSide, EyeRowState>;
   };
+  /**
+   * The stored consultation a clinician confirmed belongs to this row.
+   *
+   * Deliberately not part of {@link PortableBatchItem}: a handoff carries
+   * values between two devices, and the device on the other end can look the
+   * patient up itself. Sending a confirmed match across would also mean the
+   * confirmation was made by somebody the other device can't see.
+   */
+  attached?: AttachedConsultation;
 }
 
 /**

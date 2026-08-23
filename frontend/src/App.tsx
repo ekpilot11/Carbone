@@ -3,7 +3,9 @@ import "./App.css";
 import { BatchPanel } from "./components/BatchPanel";
 import { CameraCapture } from "./components/CameraCapture";
 import { ChallengeOverlay } from "./components/ChallengeOverlay";
+import { ConsultationMatch } from "./components/ConsultationMatch";
 import { FormReview } from "./components/FormReview";
+import type { AttachedConsultation } from "./lib/consultation";
 import {
   calculateBarrett,
   collectHandoff,
@@ -148,6 +150,12 @@ function App() {
   // Filled from the photo when the name is legible, and editable either
   // way. It heads the PDF record and is never sent to the calculator.
   const [patientName, setPatientName] = useState("");
+  // The consultation this exam was matched to, when the clinician confirmed
+  // one. Null until then — and null is what every record was before the
+  // database existed, so nothing depends on it being set.
+  const [attachedConsultation, setAttachedConsultation] = useState<AttachedConsultation | null>(
+    null,
+  );
   // A day's photos, one patient each. Set by picking several files at once.
   const [batchFiles, setBatchFiles] = useState<File[] | null>(null);
   // A day's work picked up from another device, by code.
@@ -643,6 +651,10 @@ function App() {
     setCalcError(null);
     setResult(null);
     setSubmitted(null);
+    // A new calculation is a new record. Carrying the previous patient's
+    // consultation into it is the exact mistake this whole screen guards
+    // against, so the attachment goes with the result it belonged to.
+    setAttachedConsultation(null);
     setCalculating(true);
     // A named lens is sent with the practice's constants attached but
     // unused: the backend selects the lens and lets the site fill them.
@@ -694,6 +706,7 @@ function App() {
         recommended: side === "OD" ? result.recommended?.od : result.recommended?.os,
         rows: (side === "OD" ? result.tables?.od : result.tables?.os) ?? [],
       })),
+      consultation: attachedConsultation?.consultation,
     };
     return record;
   }
@@ -1097,6 +1110,18 @@ function App() {
                 autoComplete="off"
               />
             </label>
+            {/* The day-one consultation, joined to today's measurements.
+                Nothing attaches without a person looking at both. */}
+            {record && (
+              <ConsultationMatch
+                t={t}
+                lang={lang}
+                patientName={patientName}
+                record={record}
+                attached={attachedConsultation}
+                onAttach={setAttachedConsultation}
+              />
+            )}
             <div className="record-buttons">
               <button type="button" onClick={() => handleCopyRecord(false)}>
                 {recordCopied === "rich" ? t.recordCopied : t.recordCopy}
