@@ -307,49 +307,90 @@ export async function scanFormPhoto(
 
 export interface StoredPatient {
   id: number;
-  prontuario: string;
+  /** Digits only. `formatCpf` in lib/cpf.ts puts the punctuation back. */
+  cpf?: string;
   name: string;
+  dateOfBirth?: string;
   ageYears?: number;
   updatedAt: string;
 }
 
 /**
- * What a prontuário and name mean together.
+ * What a scanned identity means.
  *
- * "The number matches a patient whose name doesn't" has its own answer on
- * purpose: it is one misread digit away from filing this consultation under
- * somebody else, and it must reach a person rather than be resolved.
+ * Says *how* it matched, because the two keys are different things: `cpf` is
+ * a number with check digits, `nameAndBirth` is the clinic's second key for
+ * a patient whose CPF is blank or unreadable. "The CPF matches a patient
+ * whose name doesn't" has its own answer on purpose: it is one misread digit
+ * away from filing this consultation under somebody else, and it must reach
+ * a person rather than be resolved.
  */
 export type PatientMatch =
   | { kind: "none" }
-  | { kind: "match"; patient: StoredPatient }
+  | { kind: "match"; patient: StoredPatient; by: "cpf" | "nameAndBirth" }
   | { kind: "nameMismatch"; patient: StoredPatient; scannedName: string }
   | { kind: "byNameOnly"; candidates: StoredPatient[] };
 
+/**
+ * The answer also carries `cpfValid`, so the screen can say a CPF's check
+ * digits don't add up without a second copy of the mod-11 rule living here.
+ */
 export async function lookupPatient(query: {
-  prontuario?: string;
+  cpf?: string;
   name?: string;
-}): Promise<PatientMatch> {
+  dateOfBirth?: string;
+}): Promise<PatientMatch & { cpfValid?: boolean }> {
   const params = new URLSearchParams();
-  if (query.prontuario) params.set("prontuario", query.prontuario);
+  if (query.cpf) params.set("cpf", query.cpf);
   if (query.name) params.set("name", query.name);
+  if (query.dateOfBirth) params.set("dob", query.dateOfBirth);
   const res = await fetch(`${API_BASE}/api/patients?${params}`);
-  if (!res.ok) throw new Error(`Couldn't check that record number (${res.status}).`);
+  if (!res.ok) throw new Error(`Couldn't check that patient (${res.status}).`);
   return res.json();
 }
 
+/**
+ * Thrown when the CPF is already stored against a different name.
+ *
+ * Not an error to report and move past: the screen shows both names, and
+ * saving again with `confirmMerge` is a person deciding they are the same
+ * patient. Nothing merges two people on the strength of a number alone.
+ */
+export class NameMismatchError extends Error {
+  readonly patient: StoredPatient | undefined;
+  readonly scannedName: string;
+
+  constructor(message: string, patient: StoredPatient | undefined, scannedName: string) {
+    super(message);
+    this.name = "NameMismatchError";
+    this.patient = patient;
+    this.scannedName = scannedName;
+  }
+}
+
 export async function savePatient(input: {
-  prontuario: string;
+  cpf?: string;
   name: string;
+  dateOfBirth?: string;
   ageYears?: number;
+  prontuario?: string;
   seenOn?: string;
   form: unknown;
-}): Promise<StoredPatient> {
+  confirmMerge?: boolean;
+}): Promise<{ patient: StoredPatient; cpfValid?: boolean }> {
   const res = await fetch(`${API_BASE}/api/patients`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
+  if (res.status === 409) {
+    const body = await res.json().catch(() => null);
+    throw new NameMismatchError(
+      body?.error ?? "This CPF is stored under a different name.",
+      body?.patient,
+      body?.scannedName ?? input.name,
+    );
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new Error(body?.error ?? `Couldn't save this consultation (${res.status}).`);

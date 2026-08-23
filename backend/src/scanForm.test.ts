@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { codedFields, detailKey, FORM_SECTIONS } from "./formFields.js";
+import {
+  canonicalOption,
+  codedFields,
+  FORM_SECTIONS,
+  optionKey,
+  RETIRED_FIELDS,
+} from "./formFields.js";
 import { FORM_SCHEMA } from "./scanForm.js";
 
 /**
@@ -9,7 +15,10 @@ import { FORM_SCHEMA } from "./scanForm.js";
  */
 describe("the extraction schema", () => {
   const schema = FORM_SCHEMA as {
-    properties: Record<string, { properties: Record<string, { enum?: unknown[] }>; required: string[] }>;
+    properties: Record<
+      string,
+      { properties: Record<string, { enum?: unknown[] }>; required: string[] }
+    >;
     required: string[];
   };
 
@@ -19,16 +28,16 @@ describe("the extraction schema", () => {
 
   it("offers a coded field exactly the options the form prints, plus null", () => {
     const ifis = schema.properties.biomicroscopia.properties.ifis;
-    expect(ifis.enum).toEqual(["ausente", "suspeita", "presente", null]);
+    expect(ifis.enum).toEqual(["Ausente", "Suspeita", "Presente", null]);
 
-    const dilatacao = schema.properties.biomicroscopia.properties.dilatacaoPupilar;
-    expect(dilatacao.enum).toEqual(["boa", "regular", "insuficiente", null]);
+    const nuclear = schema.properties.catarata.properties.nuclear;
+    expect(nuclear.enum).toEqual(["Grau I", "Grau II", "Grau III", "Grau IV", null]);
   });
 
   /**
    * Null has to be reachable for every single field. This is handwriting:
    * a schema that forces a choice would make the model invent one, and an
-   * invented "SIM" against a comorbidity is worse than a visible gap.
+   * invented "Sim" against a comorbidity is worse than a visible gap.
    */
   it("lets every coded field come back as null", () => {
     for (const { section, field } of codedFields()) {
@@ -37,20 +46,32 @@ describe("the extraction schema", () => {
     }
   });
 
-  it("opens a detail line for the options that have one on paper", () => {
-    expect(schema.properties.biomicroscopia.required).toContain(detailKey("cornea"));
-    expect(schema.properties.anamnese.required).toContain(detailKey("cirurgiaOcularPrevia"));
-    // ...and not for the ones that don't.
-    expect(schema.properties.biomicroscopia.required).not.toContain(detailKey("ifis"));
-  });
-
   it("asks for both eyes where the form has a row per eye", () => {
     expect(schema.properties.avPio.required).toEqual(expect.arrayContaining(["od", "oe"]));
-    expect(schema.properties.refracao.required).toEqual(expect.arrayContaining(["od", "oe"]));
   });
 
-  it("carries the prontuário, which everything else is matched by", () => {
-    expect(schema.properties.identificacao.required).toContain("prontuario");
+  /**
+   * The identity this app now reads off a page. The CPF is what a
+   * consultation is later matched to an exam by; the date of birth is what
+   * does it when there is no CPF.
+   */
+  it("carries the identifying fields", () => {
+    const identity = schema.properties.identificacao.required;
+    expect(identity).toContain("cpf");
+    expect(identity).toContain("dataNascimento");
+    expect(identity).toContain("paciente");
+    // Recorded, but never matched on — the same patient can be issued a
+    // different one on a later visit.
+    expect(identity).toContain("prontuario");
+  });
+
+  /** The new form is checkboxes only; nothing opens a "qual?" line any more. */
+  it("asks for no detail lines, because the paper no longer has any", () => {
+    for (const section of FORM_SECTIONS) {
+      for (const field of section.coded) {
+        expect(field.detailFor, `${section.key}.${field.key}`).toBeUndefined();
+      }
+    }
   });
 });
 
@@ -63,6 +84,13 @@ describe("the field list the statistics will count", () => {
     expect(keys).toContain("dm2");
   });
 
+  it("counts the cataract classification the new form added", () => {
+    const keys = codedFields()
+      .filter(({ section }) => section === "catarata")
+      .map(({ field }) => field.key);
+    expect(keys).toEqual(["nuclear", "cortical", "subcapsularPosterior", "outrasFormas"]);
+  });
+
   it("gives every coded field at least two options to distinguish", () => {
     for (const { field } of codedFields()) {
       expect(field.options.length, field.key).toBeGreaterThan(1);
@@ -71,8 +99,69 @@ describe("the field list the statistics will count", () => {
 
   it("keeps field keys unique within a section", () => {
     for (const section of FORM_SECTIONS) {
-      const keys = [...section.coded.map((f) => f.key), ...section.text.map((f) => f.key)];
+      const keys = [
+        ...section.coded.map((f) => f.key),
+        ...section.text.map((f) => f.key),
+        ...(section.perEye ? ["od", "oe"] : []),
+      ];
       expect(new Set(keys).size, section.key).toBe(keys.length);
     }
+  });
+});
+
+describe("matching an answer to an option", () => {
+  const ifis = FORM_SECTIONS.find((s) => s.key === "biomicroscopia")!.coded.find(
+    (f) => f.key === "ifis",
+  )!;
+  const retina = FORM_SECTIONS.find((s) => s.key === "fundoscopia")!.coded.find(
+    (f) => f.key === "mapeamentoRetina",
+  )!;
+
+  it("reads the form's own upper case back as the stored spelling", () => {
+    expect(canonicalOption(ifis, "AUSENTE")).toBe("Ausente");
+    expect(canonicalOption(ifis, "suspeita")).toBe("Suspeita");
+  });
+
+  it("forgives a dropped accent, which is how these get typed", () => {
+    expect(canonicalOption(retina, "sem alteracoes")).toBe("Sem alterações");
+    expect(optionKey("Não")).toBe(optionKey("NAO"));
+  });
+
+  /**
+   * Statistics group by these strings. One stray spelling becomes a category
+   * of its own that nobody notices, so anything that isn't an option is not
+   * an answer.
+   */
+  it("refuses a word that isn't one of the options", () => {
+    expect(canonicalOption(ifis, "provavel")).toBeUndefined();
+    expect(canonicalOption(ifis, "")).toBeUndefined();
+  });
+});
+
+/**
+ * The clinic replaced its earlier Ficha de Triagem with this form. Fields it
+ * dropped are out of the schema — there is nothing on the paper to read — but
+ * consultations already stored still hold them, and they keep their labels so
+ * a stored record can be shown in full.
+ */
+describe("fields the older form had", () => {
+  it("keeps them out of the schema", () => {
+    const asked = new Set(
+      FORM_SECTIONS.flatMap((s) => [
+        ...s.coded.map((f) => `${s.key}.${f.key}`),
+        ...s.text.map((f) => `${s.key}.${f.key}`),
+      ]),
+    );
+    for (const retired of RETIRED_FIELDS) {
+      expect(asked.has(`${retired.section}.${retired.key}`), retired.key).toBe(false);
+    }
+  });
+
+  it("still names the ones a stored consultation may hold", () => {
+    const keys = RETIRED_FIELDS.map((f) => `${f.section}.${f.key}`);
+    expect(keys).toContain("biomicroscopia.cristalino");
+    expect(keys).toContain("hipoteseDiagnostica.texto");
+    expect(keys).toContain("anamnese.queixaPrincipal");
+    expect(RETIRED_FIELDS.every((f) => f.label.trim() !== "")).toBe(true);
   });
 });

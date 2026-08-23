@@ -786,6 +786,10 @@ function App() {
                 if (file) void importForm(file);
               }}
             />
+            {/* Said where the decision is made, not only in the README: this
+                is the one feature that reads a patient's identity and keeps
+                it. */}
+            <p className="hint">{t.formStorageNote}</p>
             {formBusy && <p className="hint">{t.formReading}</p>}
             {formMessage && <p className="scan-message">{formMessage}</p>}
             <p className="hint">
@@ -945,9 +949,9 @@ function App() {
           t={t}
           scan={formScan}
           onCancel={() => setFormScan(null)}
-          onSaved={(patient) => {
+          onSaved={(patient, how) => {
             setFormScan(null);
-            setFormMessage(t.formSaved(patient.name, patient.prontuario));
+            setFormMessage(t.formSaved(patient.name, how));
           }}
         />
       )}

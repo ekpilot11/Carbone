@@ -51,8 +51,30 @@ leaves the machine, at the cost of much weaker reading of faded printouts;
 expect to type more values by hand.
 
 Either way, the confirmed numeric values (K1/K2, axial length, ACD, target
-refraction) are sent to the Barrett calculator to compute IOL power, and
-nothing is persisted anywhere.
+refraction) are sent to the Barrett calculator to compute IOL power.
+
+### The consultation form is different, in two ways
+
+Photographing the paper *Ficha de Diagnóstico — Catarata* is a second,
+separate feature, and both of the reassurances above stop applying to it.
+
+- **It reads the patient's identity on purpose.** Name, **CPF**, date of
+  birth and prontuário. A CPF is a Brazilian national identity number, not a
+  local hospital reference, and it is read because it is what matches a
+  consultation to the biometry that happens weeks later. The photograph goes
+  to the Anthropic API like any other.
+- **What it reads is kept.** The values are written to a SQLite database on
+  the machine running the server, and stay there until deleted. Everything
+  else in this app is transient; this is not.
+
+**No photographs are stored** — only the values read from them — and the
+review screen is where a person corrects them before anything is written.
+
+There is **no login**. Anyone who can reach the server can read, edit and
+delete the entire patient list. While the app is reached over a Cloudflare
+quick tunnel, that means anyone with the URL. Until access is decided, use
+**invented patients only**. See `docs/RUNNING.md` for where the file lives
+and what destroys it.
 
 ## Architecture
 

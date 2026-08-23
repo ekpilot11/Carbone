@@ -12,6 +12,11 @@ Two things to settle before you start:
   reading (unless you leave the key out), records pass through the server,
   and the address it gets is reachable from the internet. That's your
   institution's decision to make, not this file's.
+- **Consultation forms are stored, and they carry the CPF.** Photographing
+  a *Ficha de Diagnóstico* reads the patient's name, CPF, date of birth and
+  prontuário and keeps them in a database on this PC. There is no login: the
+  whole list is readable by anyone who can reach the address. Use invented
+  patients until that changes.
 
 ---
 
@@ -202,9 +207,44 @@ is only for when you want to watch each step.
 | A **502 Bad gateway** page appearing inside the app | Cloudflare gave up waiting. Calculations no longer hold a connection open, so this should not happen — if it does, `http://localhost` on the PC bypasses the tunnel entirely. |
 | Changes don't appear after an update | Reload the page. The server tells browsers not to cache it, so this should be enough; if it isn't, Ctrl+Shift+R, then `docker compose build --no-cache` and `docker compose up -d`. |
 
+## The patient database
+
+Stored consultations live in a Docker **volume** on this PC, called
+`lenscalc_lens-data`. Not in the browser, not on the phone, not in the
+cloud — which has three consequences worth knowing before you rely on it:
+
+- **Only one machine can be the host.** Running `Start Lens.cmd` on a second
+  PC gives you a second server with its own, unrelated database. Neither is
+  wrong and neither is complete. Pick one PC and always start it there.
+- **Every device that opens the app sees the same data,** and can change it.
+  The phone through the tunnel, another computer through the tunnel, this PC
+  at `http://localhost` — all of them are browsers talking to the one
+  server. There is no read-only device.
+- **Updates don't touch it.** `git pull`, `docker compose build`, restarts
+  and reboots all leave the volume alone: it is a separate object from the
+  image and the container, and it re-attaches every time.
+
+### What would actually destroy it
+
+| Command or action | Effect |
+| --- | --- |
+| `docker compose down -v` | **Deletes the volume.** The `-v` is the whole difference; plain `down` is safe. |
+| `docker volume rm lenscalc_lens-data` | Deletes it outright. |
+| `docker system prune --volumes` | Deletes it along with everything else unused. |
+| Docker Desktop → Troubleshoot → **Clean / Purge data**, or *Reset to factory defaults* | Deletes it. |
+| Uninstalling Docker Desktop | Deletes it. |
+| Renaming the folder **and** unpinning the project name | Would point at a different volume — the old data becomes invisible rather than deleted. `docker-compose.yml` pins `name: lenscalc` precisely so this can't happen. |
+
+Take a backup before doing any of those: the **Download a backup of the
+database** button in the app writes the whole thing to one JSON file. There
+is no automatic backup, so a copy exists only if someone made it.
+
 ## What this setup still doesn't have
 
-- **A login.** Anyone who has the tunnel address can use the app, and a
-  handoff code is the only thing in front of a day's patient list.
+- **A login.** Anyone who has the tunnel address can use the app — and now
+  that includes reading, editing and deleting the entire stored patient
+  list, CPFs included. Invented patients only until this changes.
 - **A permanent address.** The tunnel's URL changes every time it starts. A
   fixed one needs a Cloudflare account and a domain name.
+- **Automatic backups.** The export button is manual and nothing schedules
+  it.

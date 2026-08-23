@@ -122,20 +122,28 @@ const en = {
     `${count} field${count === 1 ? "" : "s"} could not be read and ${count === 1 ? "is" : "are"} marked "not read" below. Blank means the model read the space as empty; "not read" means it could not tell.`,
   formDetailPlaceholder: "what was written on the line",
   formNeedsIdentity:
-    "The patient's name and prontuário are needed to save — the prontuário is how this consultation is found again on exam day. Everything else can be left blank.",
-  formProntuarioMismatch: (prontuario: string, stored: string, scanned: string) =>
-    `⚠ Prontuário ${prontuario} is already stored for ${stored}, not ${scanned || "this patient"}. That is usually one misread digit. Check the number on the paper before saving — saving now would file this consultation under the wrong patient.`,
-  formProntuarioKnown: (name: string) =>
-    `This prontuário is already on file for ${name}; saving adds another consultation to that same patient.`,
+    "To save, this needs the patient's name and either a CPF or a date of birth — those are the two ways the biometry finds this consultation again on exam day. Everything else can be left blank.",
+  formCpfInvalid:
+    "⚠ This CPF's check digits don't add up, so at least one digit was read or written wrong. Check it against the paper. It can still be saved — the form itself is sometimes wrong — but the patient will then be found by name and date of birth instead.",
+  formCpfMismatch: (cpf: string, stored: string, scanned: string) =>
+    `⚠ CPF ${cpf} is already stored for ${stored}, not ${scanned || "this patient"}. That is usually one misread digit. Check the number on the paper — saving now would file this consultation under the wrong patient.`,
+  formCpfKnown: (name: string) =>
+    `This CPF is already on file for ${name}; saving adds another consultation to that same patient.`,
+  formBirthKnown: (name: string) =>
+    `${name} is already on file with this date of birth; saving adds another consultation to that same patient.`,
+  formConfirmMerge: "Save anyway — same patient",
   formSave: "Save this consultation",
   formSaving: "Saving…",
   formCancel: "Cancel",
   formSaveFailed: "Could not save this consultation.",
   formFieldsUnavailable: "Couldn't load the form's fields from the server.",
-  formImportLabel: "Or photograph a consultation form (Ficha de Triagem)",
+  formImportLabel: "Or photograph a consultation form (Ficha de Diagnóstico)",
+  formStorageNote:
+    "The photo is sent to the reading service, and the name, CPF, date of birth and prontuário it contains are stored on the computer running this app so the biometry can find them on exam day. The photo itself is not stored. There is no login yet — use invented patients.",
   formReading: "Reading the form…",
-  formSaved: (name: string, prontuario: string) =>
-    `Saved: ${name} (prontuário ${prontuario}). On exam day the biometry will find this consultation by that number.`,
+  formSeenOn: "Date of this consultation",
+  formSaved: (name: string, how: string) =>
+    `Saved: ${name} (${how}). On exam day the biometry will find this consultation by that.`,
   databaseExport: "Download a backup of the database",
   listImportLabel: "Or import a patient list (.xlsx or .csv)",
   listImporting: "Reading the list…",
@@ -378,20 +386,28 @@ const pt: Strings = {
     `${count} campo${count === 1 ? "" : "s"} não pôde${count === 1 ? "" : "ram"} ser lido${count === 1 ? "" : "s"} e está${count === 1 ? "" : "ão"} marcado${count === 1 ? "" : "s"} como "não lido" abaixo. Em branco significa que o modelo leu o espaço como vazio; "não lido" significa que ele não conseguiu distinguir.`,
   formDetailPlaceholder: "o que estava escrito na linha",
   formNeedsIdentity:
-    "O nome e o prontuário são necessários para salvar — o prontuário é como esta consulta será reencontrada no dia do exame. O resto pode ficar em branco.",
-  formProntuarioMismatch: (prontuario: string, stored: string, scanned: string) =>
-    `⚠ O prontuário ${prontuario} já está guardado para ${stored}, não para ${scanned || "este paciente"}. Normalmente é um dígito lido errado. Confira o número no papel antes de salvar — salvar agora arquivaria esta consulta no paciente errado.`,
-  formProntuarioKnown: (name: string) =>
-    `Este prontuário já está em ${name}; salvar acrescenta mais uma consulta a esse mesmo paciente.`,
+    "Para salvar são necessários o nome e o CPF ou a data de nascimento — são as duas formas de reencontrar esta consulta no dia do exame. O resto pode ficar em branco.",
+  formCpfInvalid:
+    "⚠ Os dígitos verificadores deste CPF não fecham, ou seja, algum algarismo foi lido ou escrito errado. Confira no papel. Ainda assim pode ser salvo — a própria ficha às vezes vem errada — mas o paciente será reencontrado pelo nome e data de nascimento.",
+  formCpfMismatch: (cpf: string, stored: string, scanned: string) =>
+    `⚠ O CPF ${cpf} já está guardado para ${stored}, não para ${scanned || "este paciente"}. Normalmente é um dígito lido errado. Confira o número no papel — salvar agora arquivaria esta consulta no paciente errado.`,
+  formCpfKnown: (name: string) =>
+    `Este CPF já está em ${name}; salvar acrescenta mais uma consulta a esse mesmo paciente.`,
+  formBirthKnown: (name: string) =>
+    `${name} já está cadastrado com esta data de nascimento; salvar acrescenta mais uma consulta a esse mesmo paciente.`,
+  formConfirmMerge: "Salvar mesmo assim — é o mesmo paciente",
   formSave: "Salvar esta consulta",
   formSaving: "Salvando…",
   formCancel: "Cancelar",
   formSaveFailed: "Não foi possível salvar esta consulta.",
   formFieldsUnavailable: "Não foi possível carregar os campos da ficha do servidor.",
-  formImportLabel: "Ou fotografe uma ficha de triagem",
+  formImportLabel: "Ou fotografe uma ficha de diagnóstico",
+  formStorageNote:
+    "A foto é enviada ao serviço de leitura, e o nome, o CPF, a data de nascimento e o prontuário nela contidos ficam guardados no computador que roda este aplicativo, para que a biometria os encontre no dia do exame. A foto em si não é guardada. Ainda não há login — use pacientes inventados.",
   formReading: "Lendo a ficha…",
-  formSaved: (name: string, prontuario: string) =>
-    `Salvo: ${name} (prontuário ${prontuario}). No dia do exame, a biometria encontra esta consulta por esse número.`,
+  formSeenOn: "Data desta consulta",
+  formSaved: (name: string, how: string) =>
+    `Salvo: ${name} (${how}). No dia do exame, a biometria encontra esta consulta por isso.`,
   databaseExport: "Baixar um backup do banco de dados",
   listImportLabel: "Ou importe uma lista de pacientes (.xlsx ou .csv)",
   listImporting: "Lendo a lista…",

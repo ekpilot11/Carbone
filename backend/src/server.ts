@@ -20,9 +20,11 @@ import {
   exportAll,
   listPatients,
   matchPatient,
+  NameMismatchError,
   openDatabase,
   saveConsultation,
 } from "./db.js";
+import { isValidCpf } from "./cpf.js";
 import { clearHandoffs, collectHandoff, parkHandoff } from "./handoff.js";
 import { scanImage, visionConfigured } from "./scan.js";
 import { FORM_SECTIONS } from "./formFields.js";
@@ -271,7 +273,7 @@ app.get("/api/forms/fields", (_req, res) => {
 });
 
 /**
- * Reads a photographed Ficha de Triagem.
+ * Reads a photographed Ficha de Diagnóstico.
  *
  * Nothing is stored by this route. It returns what the model made of the
  * page, including a list of what it could not read, and the clinician
@@ -308,30 +310,60 @@ app.post("/api/forms/scan", async (req, res) => {
 /**
  * Stores a reviewed consultation.
  *
- * The prontuário is required: it is what a consultation is later found by,
- * and a consultation nobody can find again is worse than one not stored.
+ * A name is required, and with it either a CPF or a date of birth: those are
+ * the two keys this patient can be found by when they come back for their
+ * biometry, and a consultation nobody can find again is worse than one not
+ * stored. The prontuário is recorded but is not one of them — the clinic
+ * says the same patient can carry a different one next visit.
+ *
+ * A CPF that fails its check digits is *warned about, not refused*. The
+ * paper itself is sometimes wrong, and a patient who cannot be recorded is
+ * a patient back on paper. What is refused is quietly filing this
+ * consultation under a stored patient with a different name.
  */
 app.post("/api/patients", (req, res) => {
-  const { prontuario, name, ageYears, seenOn, form } = req.body ?? {};
-  if (typeof prontuario !== "string" || prontuario.trim() === "") {
-    res.status(400).json({ error: "A prontuário is required — it is how this patient is found again." });
-    return;
-  }
+  const { cpf, name, dateOfBirth, ageYears, prontuario, seenOn, form, confirmMerge } =
+    req.body ?? {};
+  const text = (value: unknown) => (typeof value === "string" && value.trim() !== "" ? value : undefined);
+
   if (typeof name !== "string" || name.trim() === "") {
     res.status(400).json({ error: "A patient name is required." });
     return;
   }
+  if (!text(cpf) && !text(dateOfBirth)) {
+    res.status(400).json({
+      error:
+        "A CPF or a date of birth is required — one of the two is how this patient is found again.",
+    });
+    return;
+  }
   try {
-    res.status(201).json(
-      saveConsultation({
-        prontuario,
-        name,
-        ageYears: typeof ageYears === "number" ? ageYears : undefined,
-        seenOn: typeof seenOn === "string" ? seenOn : undefined,
-        form: form ?? {},
-      }),
-    );
+    const patient = saveConsultation({
+      cpf: text(cpf),
+      name,
+      dateOfBirth: text(dateOfBirth),
+      ageYears: typeof ageYears === "number" ? ageYears : undefined,
+      prontuario: text(prontuario),
+      seenOn: text(seenOn),
+      form: form ?? {},
+      confirmMerge: confirmMerge === true,
+    });
+    res.status(201).json({
+      patient,
+      // Said plainly rather than hidden: this consultation is stored under a
+      // CPF that does not add up, so it may not find its exam again.
+      cpfValid: patient.cpf ? isValidCpf(patient.cpf) : undefined,
+    });
   } catch (err) {
+    if (err instanceof NameMismatchError) {
+      res.status(409).json({
+        error: err.message,
+        kind: "nameMismatch",
+        patient: err.patient,
+        scannedName: err.scannedName,
+      });
+      return;
+    }
     res.status(500).json({ error: err instanceof Error ? err.message : "Could not save." });
   }
 });
@@ -339,22 +371,28 @@ app.post("/api/patients", (req, res) => {
 /**
  * Finding a stored patient.
  *
- * Answers with what was found *and how*, because "the number matched but the
- * name doesn't" is the one case that must never be resolved automatically —
- * one misread digit lands on a real patient who isn't this one.
+ * Answers with what was found *and how*: `cpf` and `nameAndBirth` are both
+ * settled matches, a name on its own only ever offers candidates, and "the
+ * CPF matched but the name doesn't" is the one case that must never be
+ * resolved automatically — one misread digit lands on a real patient who
+ * isn't this one.
  */
 app.get("/api/patients", (req, res) => {
   const read = (name: string) => {
     const raw = req.query[name];
     return typeof raw === "string" && raw.trim() !== "" ? raw : undefined;
   };
-  const prontuario = read("prontuario");
+  const cpf = read("cpf");
   const name = read("name");
-  if (!prontuario && !name) {
+  const dateOfBirth = read("dob");
+  if (!cpf && !name) {
     res.json({ patients: listPatients() });
     return;
   }
-  res.json(matchPatient({ prontuario, name }));
+  res.json({
+    ...matchPatient({ cpf, name, dateOfBirth }),
+    cpfValid: cpf ? isValidCpf(cpf) : undefined,
+  });
 });
 
 app.get("/api/patients/:id/consultations", (req, res) => {

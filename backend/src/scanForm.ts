@@ -1,8 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { codedFields, detailKey, FORM_SECTIONS } from "./formFields.js";
+import { canonicalOption, codedFields, detailKey, FORM_SECTIONS } from "./formFields.js";
 
 /**
- * Reads the clinic's *Ficha de Triagem* off a photograph of the paper form.
+ * Reads the clinic's *Ficha de Diagnóstico — Catarata* off a photograph of
+ * the paper form.
  *
  * This is the one scan in the app that reads **handwriting**. Everything
  * else here reads printed thermal output, where a misread is unusual; a
@@ -21,10 +22,12 @@ import { codedFields, detailKey, FORM_SECTIONS } from "./formFields.js";
  *   below against the first real forms; the field list lives in
  *   formFields.ts so that correcting it is one edit.
  *
- * Unlike the biometry scan, this one **does read the record number** — the
- * prontuário is what a consultation is later matched to an exam by. That is
- * a deliberate change to what this app reads off a page; see the privacy
- * sections of the READMEs.
+ * Unlike the biometry scan, this one **reads the patient's identity**: name,
+ * CPF, date of birth and prontuário, because a consultation is worthless if
+ * it cannot be matched to the exam that follows it weeks later. The CPF is a
+ * national identity number, not a local hospital reference — a deliberate
+ * and significant change to what this app reads off a page, and one the
+ * privacy sections of both READMEs spell out.
  */
 
 export interface FormScanResponse {
@@ -110,9 +113,8 @@ function buildSchema() {
 
 const SCHEMA = buildSchema();
 
-const PROMPT = `This photograph shows a filled-in Brazilian ophthalmology triage form,
-"FICHA DE TRIAGEM — PRIMEIRA CONSULTA OFTALMOLÓGICA". It is a printed form
-completed by hand.
+const PROMPT = `This photograph shows a filled-in Brazilian ophthalmology form,
+"FICHA DE DIAGNÓSTICO — CATARATA". It is a printed form completed by hand.
 
 Read what is actually written on the paper. Follow these rules exactly:
 
@@ -123,28 +125,36 @@ MISSING BEATS GUESSED
 - A field being clinically likely is not evidence that it was written.
 
 TICKED OPTIONS
-- Options appear as "( ) OD   ( ) OE   ( ) AO" and similar. A box may be
+- Options appear as empty checkboxes: "☐ OD   ☐ OE   ☐ AO". A box may be
   ticked, crossed, filled, or circled; the written word may be underlined or
   ringed instead of any box being marked. Any of these count as chosen.
 - If two options are marked, or a mark is ambiguous between them, return
   null rather than picking one.
-- Where an option opens a line beside it ("SIM: ______", "ALTERADO: ______"),
-  return that option and put what is written on the line in the matching
-  detail field.
+- Return the option exactly as it appears in the schema's list for that
+  field, whatever case it is printed in on the paper.
 
 VALUES AS WRITTEN
 - Keep visual acuity exactly as written — "20/40", "0,5", "CD", "MM", "PL"
   and "SL" all occur; do not convert between notations.
-- Keep refraction signs: "-2,00", "+1,50". Keep decimal commas as written.
-- Numbers with units (PIO in mmHg, axis in degrees) come back as the number
-  only.
+- Keep decimal commas as written.
+- Numbers with units (PIO in mmHg) come back as the number only.
 
 IDENTIFICATION
-- PACIENTE is the patient's full name.
-- PRONTUÁRIO is the hospital record number, usually in the upper right. It
-  may contain dots or dashes; return it as written.
+- NOME COMPLETO is the patient's full name.
+- CPF is the Brazilian tax identity number, eleven digits, often written
+  "123.456.789-09". Return every digit you can see, as written; do not
+  correct, complete or invent digits, and return null rather than guessing
+  one that is unclear.
+- DATA DE NASCIMENTO is printed as ____/____/________; return it as written.
 - IDADE is a number of years.
-- DATA is the consultation date as written.
+- PRONTUÁRIO is the hospital record number. It may contain dots or dashes;
+  return it as written.
+
+CATARACT CLASSIFICATION
+- The four lines (nuclear, cortical, subcapsular posterior, outras formas)
+  are independent. Only one may be marked, or several, or none. Return null
+  for each line that carries no mark — a blank line means that form of
+  cataract was not recorded, not that it is absent.
 
 Return only what the schema asks for.`;
 
@@ -189,12 +199,10 @@ function validate(parsed: unknown): FormScanResponse {
     }
 
     for (const field of section.coded) {
-      const value = cleanText(from[field.key], 40)?.toLowerCase();
-      if (value !== undefined && (field.options as readonly string[]).includes(value)) {
-        to[field.key] = value;
-      } else {
-        unread.push(`${section.key}.${field.key}`);
-      }
+      const raw = cleanText(from[field.key], 40);
+      const option = raw === undefined ? undefined : canonicalOption(field, raw);
+      if (option !== undefined) to[field.key] = option;
+      else unread.push(`${section.key}.${field.key}`);
       if (field.detailFor) {
         const detail = cleanText(from[detailKey(field.key)]);
         if (detail !== undefined) to[detailKey(field.key)] = detail;
