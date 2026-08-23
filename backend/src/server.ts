@@ -25,6 +25,7 @@ import {
 } from "./db.js";
 import { clearHandoffs, collectHandoff, parkHandoff } from "./handoff.js";
 import { scanImage, visionConfigured } from "./scan.js";
+import { FORM_SECTIONS } from "./formFields.js";
 import { formScanConfigured, scanForm } from "./scanForm.js";
 import type { CalculateRequest } from "./types.js";
 import { validateCalculateRequest } from "./validate.js";
@@ -255,6 +256,18 @@ app.get("/api/handoff/:code", (req, res) => {
     return;
   }
   res.json({ payload });
+});
+
+/**
+ * The form's own field list.
+ *
+ * Served rather than duplicated in the frontend: the extraction schema is
+ * generated from this same list, so a field added to the paper form appears
+ * in the review screen and the statistics without anything being kept in
+ * step by hand.
+ */
+app.get("/api/forms/fields", (_req, res) => {
+  res.json({ sections: FORM_SECTIONS });
 });
 
 /**

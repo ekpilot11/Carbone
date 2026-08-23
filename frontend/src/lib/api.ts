@@ -248,3 +248,116 @@ export async function calculateBarrett(payload: CalculateRequest): Promise<Calcu
       "server — check the calculator site, or press Calculate again.",
   );
 }
+
+/**
+ * The consultation form: reading one, and storing a reviewed one.
+ *
+ * The field list is fetched rather than duplicated here — the backend
+ * generates the extraction schema from the same list, so a field added to
+ * the paper form turns up in the review screen without anything being kept
+ * in step by hand.
+ */
+export interface FormFieldSpec {
+  key: string;
+  label: string;
+  kind?: "text" | "number";
+  options?: string[];
+  detailFor?: string;
+}
+
+export interface FormSectionSpec {
+  key: string;
+  title: string;
+  coded: FormFieldSpec[];
+  text: FormFieldSpec[];
+  perEye?: FormFieldSpec[];
+}
+
+export async function fetchFormFields(): Promise<FormSectionSpec[]> {
+  const res = await fetch(`${API_BASE}/api/forms/fields`);
+  if (!res.ok) throw new Error(`Couldn't load the form's fields (${res.status}).`);
+  const body = (await res.json()) as { sections?: FormSectionSpec[] };
+  return body.sections ?? [];
+}
+
+export interface FormScanResult {
+  form: Record<string, Record<string, unknown>>;
+  /** `section.field` keys the model couldn't read — shown as "not read". */
+  unread: string[];
+}
+
+export async function scanFormPhoto(
+  imageBase64: string,
+  mediaType: string,
+): Promise<FormScanResult> {
+  const res = await fetch(`${API_BASE}/api/forms/scan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ imageBase64, mediaType }),
+  });
+  if (res.status === 503) {
+    throw new ScanUnavailableError("Reading forms is not configured on the server.");
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? `Couldn't read that form (${res.status}).`);
+  }
+  return res.json();
+}
+
+export interface StoredPatient {
+  id: number;
+  prontuario: string;
+  name: string;
+  ageYears?: number;
+  updatedAt: string;
+}
+
+/**
+ * What a prontuário and name mean together.
+ *
+ * "The number matches a patient whose name doesn't" has its own answer on
+ * purpose: it is one misread digit away from filing this consultation under
+ * somebody else, and it must reach a person rather than be resolved.
+ */
+export type PatientMatch =
+  | { kind: "none" }
+  | { kind: "match"; patient: StoredPatient }
+  | { kind: "nameMismatch"; patient: StoredPatient; scannedName: string }
+  | { kind: "byNameOnly"; candidates: StoredPatient[] };
+
+export async function lookupPatient(query: {
+  prontuario?: string;
+  name?: string;
+}): Promise<PatientMatch> {
+  const params = new URLSearchParams();
+  if (query.prontuario) params.set("prontuario", query.prontuario);
+  if (query.name) params.set("name", query.name);
+  const res = await fetch(`${API_BASE}/api/patients?${params}`);
+  if (!res.ok) throw new Error(`Couldn't check that record number (${res.status}).`);
+  return res.json();
+}
+
+export async function savePatient(input: {
+  prontuario: string;
+  name: string;
+  ageYears?: number;
+  seenOn?: string;
+  form: unknown;
+}): Promise<StoredPatient> {
+  const res = await fetch(`${API_BASE}/api/patients`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? `Couldn't save this consultation (${res.status}).`);
+  }
+  return res.json();
+}
+
+/** The whole database as one file — the backup, until there's a better one. */
+export function databaseExportUrl(): string {
+  return `${API_BASE}/api/export`;
+}

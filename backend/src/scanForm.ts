@@ -30,7 +30,11 @@ import { codedFields, detailKey, FORM_SECTIONS } from "./formFields.js";
 export interface FormScanResponse {
   /** Section key → field key → value, exactly as the schema below. */
   form: Record<string, unknown>;
-  /** Fields the model could not read, so the review screen can point at them. */
+  /**
+   * Which fields came back empty, as `section.field` (or `section.eye.field`)
+   * keys — so the review screen can point at the field itself rather than
+   * parse a sentence back into one.
+   */
   unread: string[];
 }
 
@@ -180,7 +184,7 @@ function validate(parsed: unknown): FormScanResponse {
 
     for (const field of section.text) {
       const value = cleanText(from[field.key]);
-      if (value === undefined) unread.push(`${section.title}: ${field.label}`);
+      if (value === undefined) unread.push(`${section.key}.${field.key}`);
       else to[field.key] = value;
     }
 
@@ -189,7 +193,7 @@ function validate(parsed: unknown): FormScanResponse {
       if (value !== undefined && (field.options as readonly string[]).includes(value)) {
         to[field.key] = value;
       } else {
-        unread.push(`${section.title}: ${field.label}`);
+        unread.push(`${section.key}.${field.key}`);
       }
       if (field.detailFor) {
         const detail = cleanText(from[detailKey(field.key)]);
@@ -203,9 +207,8 @@ function validate(parsed: unknown): FormScanResponse {
         const eyeOut: Record<string, unknown> = {};
         for (const field of section.perEye) {
           const value = cleanText(eyeIn[field.key], 40);
-          if (value === undefined) {
-            unread.push(`${section.title} ${eye.toUpperCase()}: ${field.label}`);
-          } else eyeOut[field.key] = value;
+          if (value === undefined) unread.push(`${section.key}.${eye}.${field.key}`);
+          else eyeOut[field.key] = value;
         }
         to[eye] = eyeOut;
       }

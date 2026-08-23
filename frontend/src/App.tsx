@@ -3,14 +3,18 @@ import "./App.css";
 import { BatchPanel } from "./components/BatchPanel";
 import { CameraCapture } from "./components/CameraCapture";
 import { ChallengeOverlay } from "./components/ChallengeOverlay";
+import { FormReview } from "./components/FormReview";
 import {
   calculateBarrett,
   collectHandoff,
   convertConstant,
+  databaseExportUrl,
   fetchLensOptions,
   parkHandoff,
+  scanFormPhoto,
   scanPhoto,
   ScanUnavailableError,
+  type FormScanResult,
   type CalculateResponse,
   type IolTableRow,
 } from "./lib/api";
@@ -157,6 +161,10 @@ function App() {
   // Importing the clinic's cataract list (one patient per pair of rows).
   const [listBusy, setListBusy] = useState(false);
   const [listMessage, setListMessage] = useState<string | null>(null);
+  // A photographed Ficha de Triagem, waiting to be checked before storage.
+  const [formScan, setFormScan] = useState<FormScanResult | null>(null);
+  const [formBusy, setFormBusy] = useState(false);
+  const [formMessage, setFormMessage] = useState<string | null>(null);
 
   const eyeTitles = useMemo<Record<EyeSide, string>>(
     () => ({ OD: t.eyeOd, OS: t.eyeOs }),
@@ -533,6 +541,33 @@ function App() {
   }
 
   /**
+   * Reads a photographed consultation form.
+   *
+   * Nothing is stored here — the photo becomes a screen full of editable
+   * fields, and the clinician decides what is true before any of it reaches
+   * the database. That step is not optional: this is the only scan in the
+   * app that reads handwriting, and the only place a misreading is caught.
+   */
+  async function importForm(file: File) {
+    setFormBusy(true);
+    setFormMessage(null);
+    try {
+      const { base64, mediaType } = await prepareImage(file);
+      setFormScan(await scanFormPhoto(base64, mediaType));
+    } catch (err) {
+      setFormMessage(
+        err instanceof ScanUnavailableError
+          ? t.batchScanUnavailable
+          : err instanceof Error
+            ? err.message
+            : t.scanFailedGeneric,
+      );
+    } finally {
+      setFormBusy(false);
+    }
+  }
+
+  /**
    * Reads the clinic's cataract list into the batch view.
    *
    * Nothing is calculated here: the list becomes the same editable rows a
@@ -736,6 +771,31 @@ function App() {
           busy={scanBusy}
         />
 
+        {/* The day-one consultation, photographed. Stored so that the
+            day-two biometry can be joined to it. */}
+        {!batchFiles && !restoredBatch && !formScan && (
+          <div className="list-import">
+            <label htmlFor="form-file">{t.formImportLabel}</label>
+            <input
+              id="form-file"
+              type="file"
+              accept="image/*"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void importForm(file);
+              }}
+            />
+            {formBusy && <p className="hint">{t.formReading}</p>}
+            {formMessage && <p className="scan-message">{formMessage}</p>}
+            <p className="hint">
+              <a href={databaseExportUrl()} download>
+                {t.databaseExport}
+              </a>
+            </p>
+          </div>
+        )}
+
         {/* The clinic's cataract list, read as a day's work: one patient per
             pair of rows, exactly what one photograph used to be. */}
         {!batchFiles && !restoredBatch && (
@@ -879,6 +939,18 @@ function App() {
           </div>
         )}
       </section>
+
+      {formScan && (
+        <FormReview
+          t={t}
+          scan={formScan}
+          onCancel={() => setFormScan(null)}
+          onSaved={(patient) => {
+            setFormScan(null);
+            setFormMessage(t.formSaved(patient.name, patient.prontuario));
+          }}
+        />
+      )}
 
       {(batchFiles || restoredBatch) && (
         <BatchPanel

@@ -114,6 +114,29 @@ const en = {
   planEmpty: "Fill in every field for at least one eye to enable calculation.",
   cloudflareHint:
     'Usually nothing else is needed. If the calculator site asks for a security check, it appears here to be completed by hand — click "Verify you are human" and the calculation continues on its own.',
+  formReviewTitle: "Check the form before it is stored",
+  formHandwritingWarning:
+    "⚠ This was read from handwriting, which is far less reliable than a printed exam. Check every field against the paper — this screen is the only place a misreading gets corrected.",
+  formNotRead: "not read",
+  formUnreadCount: (count: number) =>
+    `${count} field${count === 1 ? "" : "s"} could not be read and ${count === 1 ? "is" : "are"} marked "not read" below. Blank means the model read the space as empty; "not read" means it could not tell.`,
+  formDetailPlaceholder: "what was written on the line",
+  formNeedsIdentity:
+    "The patient's name and prontuário are needed to save — the prontuário is how this consultation is found again on exam day. Everything else can be left blank.",
+  formProntuarioMismatch: (prontuario: string, stored: string, scanned: string) =>
+    `⚠ Prontuário ${prontuario} is already stored for ${stored}, not ${scanned || "this patient"}. That is usually one misread digit. Check the number on the paper before saving — saving now would file this consultation under the wrong patient.`,
+  formProntuarioKnown: (name: string) =>
+    `This prontuário is already on file for ${name}; saving adds another consultation to that same patient.`,
+  formSave: "Save this consultation",
+  formSaving: "Saving…",
+  formCancel: "Cancel",
+  formSaveFailed: "Could not save this consultation.",
+  formFieldsUnavailable: "Couldn't load the form's fields from the server.",
+  formImportLabel: "Or photograph a consultation form (Ficha de Triagem)",
+  formReading: "Reading the form…",
+  formSaved: (name: string, prontuario: string) =>
+    `Saved: ${name} (prontuário ${prontuario}). On exam day the biometry will find this consultation by that number.`,
+  databaseExport: "Download a backup of the database",
   listImportLabel: "Or import a patient list (.xlsx or .csv)",
   listImporting: "Reading the list…",
   listImported: (count: number) =>
@@ -347,6 +370,29 @@ const pt: Strings = {
   planEmpty: "Preencha todos os campos de pelo menos um olho para liberar o cálculo.",
   cloudflareHint:
     'Normalmente nada mais é preciso. Se o site da calculadora pedir verificação de segurança, ela aparece aqui para ser feita à mão — clique em "Verify you are human" e o cálculo continua sozinho.',
+  formReviewTitle: "Confira a ficha antes de guardar",
+  formHandwritingWarning:
+    "⚠ Isto foi lido de letra manuscrita, bem menos confiável que um exame impresso. Confira cada campo contra o papel — esta tela é o único lugar onde um erro de leitura é corrigido.",
+  formNotRead: "não lido",
+  formUnreadCount: (count: number) =>
+    `${count} campo${count === 1 ? "" : "s"} não pôde${count === 1 ? "" : "ram"} ser lido${count === 1 ? "" : "s"} e está${count === 1 ? "" : "ão"} marcado${count === 1 ? "" : "s"} como "não lido" abaixo. Em branco significa que o modelo leu o espaço como vazio; "não lido" significa que ele não conseguiu distinguir.`,
+  formDetailPlaceholder: "o que estava escrito na linha",
+  formNeedsIdentity:
+    "O nome e o prontuário são necessários para salvar — o prontuário é como esta consulta será reencontrada no dia do exame. O resto pode ficar em branco.",
+  formProntuarioMismatch: (prontuario: string, stored: string, scanned: string) =>
+    `⚠ O prontuário ${prontuario} já está guardado para ${stored}, não para ${scanned || "este paciente"}. Normalmente é um dígito lido errado. Confira o número no papel antes de salvar — salvar agora arquivaria esta consulta no paciente errado.`,
+  formProntuarioKnown: (name: string) =>
+    `Este prontuário já está em ${name}; salvar acrescenta mais uma consulta a esse mesmo paciente.`,
+  formSave: "Salvar esta consulta",
+  formSaving: "Salvando…",
+  formCancel: "Cancelar",
+  formSaveFailed: "Não foi possível salvar esta consulta.",
+  formFieldsUnavailable: "Não foi possível carregar os campos da ficha do servidor.",
+  formImportLabel: "Ou fotografe uma ficha de triagem",
+  formReading: "Lendo a ficha…",
+  formSaved: (name: string, prontuario: string) =>
+    `Salvo: ${name} (prontuário ${prontuario}). No dia do exame, a biometria encontra esta consulta por esse número.`,
+  databaseExport: "Baixar um backup do banco de dados",
   listImportLabel: "Ou importe uma lista de pacientes (.xlsx ou .csv)",
   listImporting: "Lendo a lista…",
   listImported: (count: number) =>
