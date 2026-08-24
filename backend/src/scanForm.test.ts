@@ -13,12 +13,18 @@ import { FORM_SCHEMA } from "./scanForm.js";
  * drift apart — and that the shape asked of the model is the shape the rest
  * of the app expects.
  */
+interface SchemaNode {
+  type?: unknown;
+  enum?: unknown[];
+  anyOf?: SchemaNode[];
+  properties?: Record<string, SchemaNode>;
+  required?: string[];
+  description?: string;
+}
+
 describe("the extraction schema", () => {
-  const schema = FORM_SCHEMA as {
-    properties: Record<
-      string,
-      { properties: Record<string, { enum?: unknown[] }>; required: string[] }
-    >;
+  const schema = FORM_SCHEMA as SchemaNode & {
+    properties: Record<string, SchemaNode & { properties: Record<string, SchemaNode> }>;
     required: string[];
   };
 
@@ -26,12 +32,15 @@ describe("the extraction schema", () => {
     expect(schema.required.sort()).toEqual(FORM_SECTIONS.map((s) => s.key).sort());
   });
 
-  it("offers a coded field exactly the options the form prints, plus null", () => {
+  it("offers a coded field exactly the options the form prints, or nothing", () => {
     const ifis = schema.properties.biomicroscopia.properties.ifis;
-    expect(ifis.enum).toEqual(["Ausente", "Suspeita", "Presente", null]);
+    expect(ifis.anyOf).toEqual([
+      { type: "string", enum: ["Ausente", "Suspeita", "Presente"] },
+      { type: "null" },
+    ]);
 
     const nuclear = schema.properties.catarata.properties.nuclear;
-    expect(nuclear.enum).toEqual(["Grau I", "Grau II", "Grau III", "Grau IV", null]);
+    expect(nuclear.anyOf?.[0].enum).toEqual(["Grau I", "Grau II", "Grau III", "Grau IV"]);
   });
 
   /**
@@ -42,8 +51,60 @@ describe("the extraction schema", () => {
   it("lets every coded field come back as null", () => {
     for (const { section, field } of codedFields()) {
       const property = schema.properties[section].properties[field.key];
-      expect(property.enum, `${section}.${field.key}`).toContain(null);
+      expect(property.anyOf?.some((branch) => branch.type === "null"), `${section}.${field.key}`)
+        .toBe(true);
     }
+  });
+
+  /**
+   * The rule the API enforces, restated where it can run without a key.
+   *
+   * The previous version of this file asserted the shape the code produced
+   * rather than the shape the API accepts, so it passed for weeks against a
+   * schema the API rejects outright:
+   *
+   *     Invalid schema: Enum value 'OD' does not match declared type
+   *     '['string', 'null']'
+   *
+   * Nothing here can send a schema anywhere, so this walks it instead and
+   * checks the two things that 400 was about.
+   */
+  describe("is one the API will accept", () => {
+    function walk(node: SchemaNode, path: string, visit: (node: SchemaNode, path: string) => void) {
+      visit(node, path);
+      for (const branch of node.anyOf ?? []) walk(branch, `${path}|anyOf`, visit);
+      for (const [key, child] of Object.entries(node.properties ?? {})) {
+        walk(child, `${path}.${key}`, visit);
+      }
+    }
+
+    it("never puts an enum beside a union type", () => {
+      walk(schema, "", (node, path) => {
+        if (node.enum === undefined) return;
+        // The API validates each enum value against the declared type, and
+        // a union type has nothing single to validate against.
+        expect(Array.isArray(node.type), `${path} declares enum with type ${JSON.stringify(node.type)}`)
+          .toBe(false);
+      });
+    });
+
+    it("gives every node either one type or an anyOf", () => {
+      walk(schema, "", (node, path) => {
+        const hasScalarType = typeof node.type === "string";
+        const hasUnionType = Array.isArray(node.type);
+        const hasAnyOf = Array.isArray(node.anyOf);
+        expect(hasScalarType || hasUnionType || hasAnyOf, `${path} declares no type at all`).toBe(
+          true,
+        );
+      });
+    });
+
+    it("keeps every field's description, which is what tells the model what it is", () => {
+      for (const { section, field } of codedFields()) {
+        const property = schema.properties[section].properties[field.key];
+        expect(property.description, `${section}.${field.key}`).toContain(field.label);
+      }
+    });
   });
 
   it("asks for both eyes where the form has a row per eye", () => {

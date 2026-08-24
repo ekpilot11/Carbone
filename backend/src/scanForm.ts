@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { canonicalOption, codedFields, detailKey, FORM_SECTIONS } from "./formFields.js";
+import { readableErrors } from "./modelErrors.js";
 
 /**
  * Reads the clinic's *Ficha de Diagnóstico — Catarata* off a photograph of
@@ -44,6 +45,29 @@ export interface FormScanResponse {
 const MODEL = process.env.SCAN_MODEL ?? "claude-opus-5";
 const MAX_TOKENS = 4096;
 
+/**
+ * One of the form's own options, or nothing.
+ *
+ * Written as `anyOf` rather than the obvious
+ * `{ type: ["string", "null"], enum: [...options, null] }`, which the API
+ * rejects outright:
+ *
+ *     Invalid schema: Enum value 'OD' does not match declared type
+ *     '['string', 'null']'
+ *
+ * It checks each enum value against the declared type, and will not take the
+ * union form of `type` beside `enum`. `anyOf` is the construct it is built
+ * around: the SDK's own schema normaliser handles `anyOf`, folds `oneOf`
+ * into it, and insists on a scalar `type` otherwise.
+ *
+ * The null branch is not a formality. This reads handwriting, and a schema
+ * that forced a choice would make the model invent one; a blank box has to
+ * stay a blank box all the way to the review screen.
+ */
+function nullableEnum(options: readonly string[], description: string) {
+  return { anyOf: [{ type: "string", enum: [...options] }, { type: "null" }], description };
+}
+
 function buildSchema() {
   const properties: Record<string, unknown> = {};
 
@@ -58,11 +82,10 @@ function buildSchema() {
     }
 
     for (const field of section.coded) {
-      fields[field.key] = {
-        type: ["string", "null"],
-        enum: [...field.options, null],
-        description: `${field.label} — which option is ticked. Null if none is, or if it can't be told.`,
-      };
+      fields[field.key] = nullableEnum(
+        field.options,
+        `${field.label} — which option is ticked. Null if none is, or if it can't be told.`,
+      );
       if (field.detailFor) {
         fields[detailKey(field.key)] = {
           type: ["string", "null"],
@@ -267,20 +290,23 @@ export async function scanForm(
    * - Streaming. The result is identical, but a long read can no longer
    *   trip the SDK's own HTTP timeout on the way.
    */
-  const stream = client.beta.messages.stream({
-    model: MODEL,
-    max_tokens: MAX_TOKENS,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    output_config: { format: { type: "json_schema", schema: SCHEMA }, effort: "low" },
-    messages: [
-      {
-        role: "user",
-        content: [sourceBlock(imageBase64, mediaType), { type: "text", text: PROMPT }],
-      },
-    ],
-  } as Parameters<typeof client.beta.messages.stream>[0]);
-  const response = await stream.finalMessage();
+  const response = await readableErrors(() =>
+    client.beta.messages
+      .stream({
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default",
+        output_config: { format: { type: "json_schema", schema: SCHEMA }, effort: "low" },
+        messages: [
+          {
+            role: "user",
+            content: [sourceBlock(imageBase64, mediaType), { type: "text", text: PROMPT }],
+          },
+        ],
+      } as Parameters<typeof client.beta.messages.stream>[0])
+      .finalMessage(),
+  );
 
   if (response.stop_reason === "refusal") {
     throw new Error(

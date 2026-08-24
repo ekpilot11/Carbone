@@ -26,8 +26,12 @@ const en = {
     "Always verify every value — especially anything read from a photo — and confirm the final IOL power on the official calculator before using it in surgical planning.",
   disclaimerPhotoBefore: " Photos are read by a vision model, which means ",
   disclaimerPhotoStrong: "the image is sent off this machine",
+  // "Nothing is stored" was true of every path when it was written. It is
+  // not true of a consultation form, whose identifying fields are kept on
+  // the host — and a warning box that contradicts the page below it is
+  // worse than no warning box.
   disclaimerPhotoAfter:
-    ". The patient's name is read from the photo to head the PDF record; no other identifier is read. Nothing is stored or logged.",
+    ". For an exam photo, only the patient's name is read — to head the PDF record — and nothing is kept afterwards. A consultation form is different: the name, CPF, date of birth and prontuário on it are stored on the computer running this app.",
 
   captureLabel: "1. Photograph the exam printouts",
   captureHint:
@@ -352,7 +356,7 @@ const pt: Strings = {
   disclaimerPhotoBefore: " As fotos são lidas por um modelo de visão, ou seja, ",
   disclaimerPhotoStrong: "a imagem sai deste computador",
   disclaimerPhotoAfter:
-    ". O nome do paciente é lido da foto apenas para encabeçar o prontuário em PDF; nenhum outro identificador é lido. Nada é armazenado nem registrado em log.",
+    ". Na foto de exame, só o nome do paciente é lido — para encabeçar o prontuário em PDF — e nada fica guardado depois. Com a ficha de consulta é diferente: o nome, o CPF, a data de nascimento e o prontuário nela contidos ficam guardados no computador que roda este aplicativo.",
 
   captureLabel: "1. Fotografe os exames impressos",
   captureHint:
