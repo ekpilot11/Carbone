@@ -46,26 +46,46 @@ const MODEL = process.env.SCAN_MODEL ?? "claude-opus-5";
 const MAX_TOKENS = 4096;
 
 /**
- * One of the form's own options, or nothing.
+ * "Nothing here" as a value, not as a type.
  *
- * Written as `anyOf` rather than the obvious
- * `{ type: ["string", "null"], enum: [...options, null] }`, which the API
- * rejects outright:
+ * Every field on this form is optional, and the obvious way to say so is to
+ * make each one nullable. The API refuses that twice over. First it will
+ * not take a union `type` beside an `enum`:
  *
  *     Invalid schema: Enum value 'OD' does not match declared type
  *     '['string', 'null']'
  *
- * It checks each enum value against the declared type, and will not take the
- * union form of `type` beside `enum`. `anyOf` is the construct it is built
- * around: the SDK's own schema normaliser handles `anyOf`, folds `oneOf`
- * into it, and insists on a scalar `type` otherwise.
+ * Rewriting those as `anyOf` walked straight into the second refusal:
  *
- * The null branch is not a formality. This reads handwriting, and a schema
- * that forced a choice would make the model invent one; a blank box has to
- * stay a blank box all the way to the review screen.
+ *     Schemas contains too many parameters with union types (31 parameters
+ *     with type arrays or anyOf) … limit: 16 parameters with unions
+ *
+ * 31 is every optional field on the paper, counted exactly — nested per-eye
+ * fields included. No arrangement of unions fits under 16 while the form
+ * has 31 optional fields, so the unions have to go entirely: every field is
+ * a plain string, and an **empty string** is how the model says a box was
+ * not marked or a line was left blank.
+ *
+ * That is not a workaround dressed up as a design. `cleanText()` below
+ * already treats an empty string as nothing read, so a blank lands in
+ * `unread` exactly as `null` did, and the distinction the review screen is
+ * built on — blank on the paper versus couldn't read it — is untouched. The
+ * model keeps a way to decline every single field, which is the point: this
+ * reads handwriting, and a schema that forced a choice would make it invent
+ * one.
  */
-function nullableEnum(options: readonly string[], description: string) {
-  return { anyOf: [{ type: "string", enum: [...options] }, { type: "null" }], description };
+const BLANK = "";
+
+function codedField(options: readonly string[], label: string) {
+  return {
+    type: "string",
+    enum: [...options, BLANK],
+    description: `${label} — which option is ticked. Empty string if none is, or if it can't be told.`,
+  };
+}
+
+function textField(description: string) {
+  return { type: "string", description };
 }
 
 function buildSchema() {
@@ -75,22 +95,15 @@ function buildSchema() {
     const fields: Record<string, unknown> = {};
 
     for (const field of section.text) {
-      fields[field.key] = {
-        type: ["string", "null"],
-        description: `${field.label}. Null if blank or illegible.`,
-      };
+      fields[field.key] = textField(`${field.label}. Empty string if blank or illegible.`);
     }
 
     for (const field of section.coded) {
-      fields[field.key] = nullableEnum(
-        field.options,
-        `${field.label} — which option is ticked. Null if none is, or if it can't be told.`,
-      );
+      fields[field.key] = codedField(field.options, field.label);
       if (field.detailFor) {
-        fields[detailKey(field.key)] = {
-          type: ["string", "null"],
-          description: `What is written beside "${field.detailFor}" for ${field.label}. Null if blank.`,
-        };
+        fields[detailKey(field.key)] = textField(
+          `What is written beside "${field.detailFor}" for ${field.label}. Empty string if blank.`,
+        );
       }
     }
 
@@ -98,10 +111,9 @@ function buildSchema() {
       for (const eye of ["od", "oe"] as const) {
         const perEye: Record<string, unknown> = {};
         for (const field of section.perEye) {
-          perEye[field.key] = {
-            type: ["string", "null"],
-            description: `${field.label} for ${eye.toUpperCase()}, as written. Null if blank.`,
-          };
+          perEye[field.key] = textField(
+            `${field.label} for ${eye.toUpperCase()}, as written. Empty string if blank.`,
+          );
         }
         fields[eye] = {
           type: "object",
@@ -142,17 +154,20 @@ const PROMPT = `This photograph shows a filled-in Brazilian ophthalmology form,
 Read what is actually written on the paper. Follow these rules exactly:
 
 MISSING BEATS GUESSED
-- Return null for anything blank, crossed out, or that you cannot read with
-  confidence. Never infer a value from context, from what is typical, or
-  from other fields.
+- Return an empty string ("") for anything blank, crossed out, or that you
+  cannot read with confidence. Never infer a value from context, from what
+  is typical, or from other fields.
 - A field being clinically likely is not evidence that it was written.
+- Every field on this form is optional. An empty string is always an
+  acceptable answer, and it is the right one whenever the paper does not
+  clearly say otherwise.
 
 TICKED OPTIONS
 - Options appear as empty checkboxes: "☐ OD   ☐ OE   ☐ AO". A box may be
   ticked, crossed, filled, or circled; the written word may be underlined or
   ringed instead of any box being marked. Any of these count as chosen.
-- If two options are marked, or a mark is ambiguous between them, return
-  null rather than picking one.
+- If two options are marked, or a mark is ambiguous between them, return an
+  empty string rather than picking one.
 - Return the option exactly as it appears in the schema's list for that
   field, whatever case it is printed in on the paper.
 
@@ -166,8 +181,8 @@ IDENTIFICATION
 - NOME COMPLETO is the patient's full name.
 - CPF is the Brazilian tax identity number, eleven digits, often written
   "123.456.789-09". Return every digit you can see, as written; do not
-  correct, complete or invent digits, and return null rather than guessing
-  one that is unclear.
+  correct, complete or invent digits, and return an empty string rather than
+  guessing one that is unclear.
 - DATA DE NASCIMENTO is printed as ____/____/________; return it as written.
 - IDADE is a number of years.
 - PRONTUÁRIO is the hospital record number. It may contain dots or dashes;
@@ -175,9 +190,9 @@ IDENTIFICATION
 
 CATARACT CLASSIFICATION
 - The four lines (nuclear, cortical, subcapsular posterior, outras formas)
-  are independent. Only one may be marked, or several, or none. Return null
-  for each line that carries no mark — a blank line means that form of
-  cataract was not recorded, not that it is absent.
+  are independent. Only one may be marked, or several, or none. Return an
+  empty string for each line that carries no mark — a blank line means that
+  form of cataract was not recorded, not that it is absent.
 
 Return only what the schema asks for.`;
 
@@ -204,9 +219,14 @@ function cleanText(raw: unknown, limit = 400): string | undefined {
  *
  * A coded field that isn't one of its own options is dropped rather than
  * stored: statistics group by these, and one stray spelling becomes a
- * category of its own that nobody notices.
+ * category of its own that nobody notices. An empty string is one such
+ * value, which is what lets "not marked" travel as a plain string and still
+ * arrive at the review screen as *not read* rather than as an answer.
+ *
+ * Exported for the tests: this is where the blank-versus-unread guarantee
+ * actually lives.
  */
-function validate(parsed: unknown): FormScanResponse {
+export function validate(parsed: unknown): FormScanResponse {
   const input = (parsed ?? {}) as Record<string, Record<string, unknown>>;
   const form: Record<string, Record<string, unknown>> = {};
   const unread: string[] = [];

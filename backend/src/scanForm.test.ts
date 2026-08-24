@@ -6,7 +6,8 @@ import {
   optionKey,
   RETIRED_FIELDS,
 } from "./formFields.js";
-import { FORM_SCHEMA } from "./scanForm.js";
+import { BIOMETRY_SCHEMA } from "./scan.js";
+import { FORM_SCHEMA, validate } from "./scanForm.js";
 
 /**
  * The schema is generated from the field list, so these check the two can't
@@ -18,6 +19,7 @@ interface SchemaNode {
   enum?: unknown[];
   anyOf?: SchemaNode[];
   properties?: Record<string, SchemaNode>;
+  items?: SchemaNode;
   required?: string[];
   description?: string;
 }
@@ -34,77 +36,31 @@ describe("the extraction schema", () => {
 
   it("offers a coded field exactly the options the form prints, or nothing", () => {
     const ifis = schema.properties.biomicroscopia.properties.ifis;
-    expect(ifis.anyOf).toEqual([
-      { type: "string", enum: ["Ausente", "Suspeita", "Presente"] },
-      { type: "null" },
-    ]);
+    expect(ifis.enum).toEqual(["Ausente", "Suspeita", "Presente", ""]);
 
     const nuclear = schema.properties.catarata.properties.nuclear;
-    expect(nuclear.anyOf?.[0].enum).toEqual(["Grau I", "Grau II", "Grau III", "Grau IV"]);
+    expect(nuclear.enum).toEqual(["Grau I", "Grau II", "Grau III", "Grau IV", ""]);
   });
 
   /**
-   * Null has to be reachable for every single field. This is handwriting:
-   * a schema that forces a choice would make the model invent one, and an
-   * invented "Sim" against a comorbidity is worse than a visible gap.
+   * "Nothing" has to be reachable for every single field. This is
+   * handwriting: a schema that forces a choice would make the model invent
+   * one, and an invented "Sim" against a comorbidity is worse than a
+   * visible gap. It used to be `null`; the API's union limit made it an
+   * empty string, and the guarantee is the same either way.
    */
-  it("lets every coded field come back as null", () => {
+  it("lets every coded field come back empty", () => {
     for (const { section, field } of codedFields()) {
       const property = schema.properties[section].properties[field.key];
-      expect(property.anyOf?.some((branch) => branch.type === "null"), `${section}.${field.key}`)
-        .toBe(true);
+      expect(property.enum, `${section}.${field.key}`).toContain("");
     }
   });
 
-  /**
-   * The rule the API enforces, restated where it can run without a key.
-   *
-   * The previous version of this file asserted the shape the code produced
-   * rather than the shape the API accepts, so it passed for weeks against a
-   * schema the API rejects outright:
-   *
-   *     Invalid schema: Enum value 'OD' does not match declared type
-   *     '['string', 'null']'
-   *
-   * Nothing here can send a schema anywhere, so this walks it instead and
-   * checks the two things that 400 was about.
-   */
-  describe("is one the API will accept", () => {
-    function walk(node: SchemaNode, path: string, visit: (node: SchemaNode, path: string) => void) {
-      visit(node, path);
-      for (const branch of node.anyOf ?? []) walk(branch, `${path}|anyOf`, visit);
-      for (const [key, child] of Object.entries(node.properties ?? {})) {
-        walk(child, `${path}.${key}`, visit);
-      }
+  it("keeps every field's description, which is what tells the model what it is", () => {
+    for (const { section, field } of codedFields()) {
+      const property = schema.properties[section].properties[field.key];
+      expect(property.description, `${section}.${field.key}`).toContain(field.label);
     }
-
-    it("never puts an enum beside a union type", () => {
-      walk(schema, "", (node, path) => {
-        if (node.enum === undefined) return;
-        // The API validates each enum value against the declared type, and
-        // a union type has nothing single to validate against.
-        expect(Array.isArray(node.type), `${path} declares enum with type ${JSON.stringify(node.type)}`)
-          .toBe(false);
-      });
-    });
-
-    it("gives every node either one type or an anyOf", () => {
-      walk(schema, "", (node, path) => {
-        const hasScalarType = typeof node.type === "string";
-        const hasUnionType = Array.isArray(node.type);
-        const hasAnyOf = Array.isArray(node.anyOf);
-        expect(hasScalarType || hasUnionType || hasAnyOf, `${path} declares no type at all`).toBe(
-          true,
-        );
-      });
-    });
-
-    it("keeps every field's description, which is what tells the model what it is", () => {
-      for (const { section, field } of codedFields()) {
-        const property = schema.properties[section].properties[field.key];
-        expect(property.description, `${section}.${field.key}`).toContain(field.label);
-      }
-    });
   });
 
   it("asks for both eyes where the form has a row per eye", () => {
@@ -224,5 +180,168 @@ describe("fields the older form had", () => {
     expect(keys).toContain("hipoteseDiagnostica.texto");
     expect(keys).toContain("anamnese.queixaPrincipal");
     expect(RETIRED_FIELDS.every((f) => f.label.trim() !== "")).toBe(true);
+  });
+});
+
+/**
+ * The rules the API enforces, restated where they can run without a key.
+ *
+ * This file once asserted the shape the code produced rather than the shape
+ * the API accepts, and so passed while the schema was rejected outright.
+ * Two rejections have been paid for so far, both discovered by the clinic:
+ *
+ *     Invalid schema: Enum value 'OD' does not match declared type
+ *     '['string', 'null']'
+ *
+ *     Schemas contains too many parameters with union types (31 parameters
+ *     with type arrays or anyOf) … limit: 16 parameters with unions
+ *
+ * Each is a rule below, run over **both** schemas this app sends. Nothing
+ * here can send a schema anywhere, so these walk it instead — and every
+ * future 400 belongs here too, rather than being found the same way again.
+ */
+describe.each([
+  ["the form schema", FORM_SCHEMA],
+  ["the biometry schema", BIOMETRY_SCHEMA],
+])("%s is one the API will accept", (_name, subject) => {
+  function walk(node: SchemaNode, path: string, visit: (node: SchemaNode, path: string) => void) {
+    visit(node, path);
+    for (const branch of node.anyOf ?? []) walk(branch, `${path}|anyOf`, visit);
+    for (const [key, child] of Object.entries(node.properties ?? {})) {
+      walk(child, `${path}.${key}`, visit);
+    }
+    if (node.items) walk(node.items, `${path}[]`, visit);
+  }
+
+  const root = subject as SchemaNode;
+
+  it("never puts an enum beside a union type", () => {
+    walk(root, "", (node, path) => {
+      if (node.enum === undefined) return;
+      // The API validates each enum value against the declared type, and a
+      // union type has nothing single to validate against.
+      expect(
+        Array.isArray(node.type),
+        `${path} declares enum with type ${JSON.stringify(node.type)}`,
+      ).toBe(false);
+    });
+  });
+
+  it("gives every node either one type or an anyOf", () => {
+    walk(root, "", (node, path) => {
+      const declared =
+        typeof node.type === "string" || Array.isArray(node.type) || Array.isArray(node.anyOf);
+      expect(declared, `${path} declares no type at all`).toBe(true);
+    });
+  });
+
+  /**
+   * The limit that made the whole form optional-by-value rather than
+   * optional-by-type. The API counts every parameter anywhere in the schema
+   * whose type is a union — nested per-eye fields included — and refuses
+   * above sixteen. The form has 31 optional fields, so no arrangement of
+   * unions fits, which is why "not marked" is an empty string, not a null.
+   */
+  it("stays under the API's limit of 16 union-typed parameters", () => {
+    const unions: string[] = [];
+    walk(root, "", (node, path) => {
+      if (Array.isArray(node.type) || Array.isArray(node.anyOf)) unions.push(path || "(root)");
+    });
+    expect(
+      unions.length,
+      `${unions.length} union-typed parameters (limit 16): ${unions.slice(0, 8).join(", ")}`,
+    ).toBeLessThanOrEqual(16);
+  });
+});
+
+/**
+ * What the model sends back, turned into an answer or a gap.
+ *
+ * This is the guarantee the whole review screen rests on, and the API's
+ * union limit moved it: "nothing here" used to arrive as `null` and now
+ * arrives as an empty string. The behaviour either side of that change has
+ * to be identical, because a box the model could not read must never look
+ * like a box nobody ticked.
+ */
+describe("reading the model's answer", () => {
+  /** A half-filled form, exactly as the schema now asks for it. */
+  const ANSWER = {
+    identificacao: {
+      paciente: "DJALMA SANTOS FERNANDES LEME",
+      prontuario: "196752",
+      dataNascimento: "08/12/1954",
+      idade: "",
+      cpf: "735.347.498-04",
+    },
+    anamnese: { olhoAcometido: "AO", usoOculos: "NÃO", cirurgiaOcularPrevia: "" },
+    comorbidades: { dm2: "SIM", has: "SIM", glaucoma: "NÃO", tansulosina: "", outrasComorbidades: "" },
+    avPio: { od: { sc: "20/80", cc: "", pio: "14" }, oe: { sc: "20/100", cc: "", pio: "14" } },
+    biomicroscopia: {
+      palpebrasCilios: "NORMAL",
+      conjuntivaEsclera: "",
+      cornea: "",
+      camaraAnterior: "",
+      ifis: "AUSENTE",
+      dilatacaoPupilar: "BOA",
+    },
+    catarata: { nuclear: "GRAU III", cortical: "", subcapsularPosterior: "", outrasFormas: "" },
+    fundoscopia: { mapeamentoRetina: "SEM ALTERAÇÕES", outroAchado: "" },
+  };
+
+  /** `form` is section → field → value; the test wants to reach into it. */
+  const read = (parsed: unknown) => {
+    const { form, unread } = validate(parsed);
+    return { form: form as Record<string, Record<string, never>>, unread };
+  };
+
+  it("keeps what was answered, in the app's own spelling", () => {
+    const { form } = read(ANSWER);
+    expect(form.identificacao).toMatchObject({
+      paciente: "DJALMA SANTOS FERNANDES LEME",
+      cpf: "735.347.498-04",
+    });
+    // The paper prints "SIM" and "NÃO"; the app stores "Sim" and "Não".
+    expect(form.comorbidades).toMatchObject({ dm2: "Sim", has: "Sim", glaucoma: "Não" });
+    expect(form.catarata).toMatchObject({ nuclear: "Grau III" });
+    expect(form.avPio.od).toEqual({ sc: "20/80", pio: "14" });
+  });
+
+  it("turns every empty string into a gap, not an answer", () => {
+    const { form, unread } = read(ANSWER);
+    for (const path of [
+      "identificacao.idade",
+      "anamnese.cirurgiaOcularPrevia",
+      "comorbidades.tansulosina",
+      "catarata.cortical",
+      "biomicroscopia.cornea",
+      "fundoscopia.outroAchado",
+      "avPio.od.cc",
+      "avPio.oe.cc",
+    ]) {
+      expect(unread, path).toContain(path);
+    }
+    // ...and nothing empty was stored as if it had been read.
+    expect(form.comorbidades.tansulosina).toBeUndefined();
+    expect(form.catarata.cortical).toBeUndefined();
+    expect(form.avPio.od).not.toHaveProperty("cc");
+  });
+
+  it("reports a blank form entirely as unread rather than as answers", () => {
+    const { form, unread } = read({});
+    expect(unread.length).toBeGreaterThan(25);
+    for (const section of Object.values(form)) {
+      for (const [key, value] of Object.entries(section as Record<string, unknown>)) {
+        // Per-eye groups are objects; every other stored value must be absent.
+        if (key === "od" || key === "oe") expect(value).toEqual({});
+        else expect(value).toBeUndefined();
+      }
+    }
+  });
+
+  /** One stray spelling would become a statistics category of its own. */
+  it("drops an answer that isn't one of the form's options", () => {
+    const { form, unread } = read({ biomicroscopia: { ifis: "provavelmente" } });
+    expect(form.biomicroscopia.ifis).toBeUndefined();
+    expect(unread).toContain("biomicroscopia.ifis");
   });
 });

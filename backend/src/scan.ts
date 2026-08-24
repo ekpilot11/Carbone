@@ -257,3 +257,11 @@ export async function scanImage(
 
   return validate(parsed);
 }
+
+/**
+ * Exported for the tests, which check both schemas against the constraints
+ * the API has actually rejected us for. This one carries a single nullable
+ * field and is nowhere near the union limit — but it is one edit away from
+ * the wall the form schema hit, and nothing else was checking it.
+ */
+export const BIOMETRY_SCHEMA = SCHEMA;
