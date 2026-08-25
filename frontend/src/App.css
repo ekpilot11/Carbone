@@ -967,3 +967,59 @@ input.not-read {
   gap: 0.35rem;
   align-items: flex-start;
 }
+
+/* A field the paper contradicts itself on: more than one box ticked. Louder
+   than "not read", because nothing here can settle it and the value is not
+   stored until a person does. */
+.form-row-ambiguous {
+  background: #fff9e6;
+  border-left: 3px solid #e0b400;
+  padding-left: 0.45rem;
+}
+
+.two-ticked-tag {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  background: #e0b400;
+  color: #3a2c00;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* The patient the app found, and the evidence for it — the question a
+   person is actually being asked, so it leads the card. */
+.match-found {
+  width: 100%;
+}
+
+.match-found-name {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+}
+
+.match-found-id {
+  color: #4a5560;
+  font-weight: 500;
+}
+
+.match-decide {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+/* Looking a patient up by hand: the fallback for a misread name, folded
+   away so the automatic path is the obvious one. */
+.match-other > summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #2b5fd9;
+}
+
+.match-other[open] > summary {
+  margin-bottom: 0.5rem;
+}

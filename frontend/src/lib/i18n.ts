@@ -124,6 +124,9 @@ const en = {
   formNotRead: "not read",
   formUnreadCount: (count: number) =>
     `${count} field${count === 1 ? "" : "s"} could not be read and ${count === 1 ? "is" : "are"} marked "not read" below. Blank means the model read the space as empty; "not read" means it could not tell.`,
+  formTwoTicked: "two marked",
+  formAmbiguousCount: (count: number) =>
+    `⚠ ${count} field${count === 1 ? " has" : "s have"} more than one box ticked on the paper. The app will not choose between them — pick the one that is right, or leave it unanswered.`,
   formDetailPlaceholder: "what was written on the line",
   formNeedsIdentity:
     "To save, this needs the patient's name and either a CPF or a date of birth — those are the two ways the biometry finds this consultation again on exam day. Everything else can be left blank.",
@@ -156,6 +159,14 @@ const en = {
   matchCpfLabel: "CPF",
   matchDobLabel: "Date of birth",
   matchSearch: "Look this patient up",
+  matchNeedsName: "Type the patient's name above and this looks them up on its own.",
+  matchOtherWays: "Not the right patient? Look them up by CPF or date of birth",
+  matchIdentityCpf: (cpf: string) => `CPF ${cpf}`,
+  matchIdentityBirth: (date: string) => `born ${date}`,
+  matchIdentityNameOnly: "no CPF or date of birth on file",
+  matchConfirmQuestion:
+    "Found by name. Check the CPF or date of birth above against the patient in front of you before confirming — this attaches their consultation to today's measurements.",
+  matchReject: "Not this patient",
   matchSearching: "Looking…",
   matchNone:
     "No stored consultation for this patient. The record is produced from the measurements alone, exactly as before.",
@@ -450,6 +461,9 @@ const pt: Strings = {
   formNotRead: "não lido",
   formUnreadCount: (count: number) =>
     `${count} campo${count === 1 ? "" : "s"} não pôde${count === 1 ? "" : "ram"} ser lido${count === 1 ? "" : "s"} e está${count === 1 ? "" : "ão"} marcado${count === 1 ? "" : "s"} como "não lido" abaixo. Em branco significa que o modelo leu o espaço como vazio; "não lido" significa que ele não conseguiu distinguir.`,
+  formTwoTicked: "duas marcadas",
+  formAmbiguousCount: (count: number) =>
+    `⚠ ${count} campo${count === 1 ? "" : "s"} ${count === 1 ? "está" : "estão"} com mais de uma caixa marcada no papel. O aplicativo não escolhe entre elas — marque a correta, ou deixe sem resposta.`,
   formDetailPlaceholder: "o que estava escrito na linha",
   formNeedsIdentity:
     "Para salvar são necessários o nome e o CPF ou a data de nascimento — são as duas formas de reencontrar esta consulta no dia do exame. O resto pode ficar em branco.",
@@ -482,6 +496,14 @@ const pt: Strings = {
   matchCpfLabel: "CPF",
   matchDobLabel: "Data de nascimento",
   matchSearch: "Procurar este paciente",
+  matchNeedsName: "Digite o nome do paciente acima e a busca acontece sozinha.",
+  matchOtherWays: "Não é este paciente? Procure por CPF ou data de nascimento",
+  matchIdentityCpf: (cpf: string) => `CPF ${cpf}`,
+  matchIdentityBirth: (date: string) => `nascido em ${date}`,
+  matchIdentityNameOnly: "sem CPF ou data de nascimento cadastrados",
+  matchConfirmQuestion:
+    "Encontrado pelo nome. Confira o CPF ou a data de nascimento acima com o paciente à sua frente antes de confirmar — isto anexa a consulta dele às medidas de hoje.",
+  matchReject: "Não é este paciente",
   matchSearching: "Procurando…",
   matchNone:
     "Nenhuma consulta guardada para este paciente. O prontuário sai apenas com as medidas, como antes.",

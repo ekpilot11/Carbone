@@ -41,7 +41,7 @@ type FormValues = Record<string, Record<string, unknown>>;
 
 interface FormReviewProps {
   t: Strings;
-  scan: { form: FormValues; unread: string[] };
+  scan: { form: FormValues; unread: string[]; ambiguous?: string[] };
   onSaved: (patient: StoredPatient, how: string) => void;
   onCancel: () => void;
 }
@@ -59,6 +59,10 @@ export function FormReview({ t, scan, onSaved, onCancel }: FormReviewProps) {
   const [sections, setSections] = useState<FormSectionSpec[]>([]);
   const [values, setValues] = useState<FormValues>(scan.form);
   const [unread, setUnread] = useState<Set<string>>(new Set(scan.unread));
+  // Fields where the paper has more than one box ticked. Not a reading
+  // failure — a contradiction on the form that only the examiner can
+  // settle, so it is asked as its own question rather than tagged as unread.
+  const [ambiguous, setAmbiguous] = useState<Set<string>>(new Set(scan.ambiguous ?? []));
   const [seenOn, setSeenOn] = useState(today());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,6 +132,11 @@ export function FormReview({ t, scan, onSaved, onCancel }: FormReviewProps) {
       next.delete(`${section}.${key}`);
       return next;
     });
+    setAmbiguous((current) => {
+      const next = new Set(current);
+      next.delete(`${section}.${key}`);
+      return next;
+    });
     // Any edit to the identity reopens the question of who this is.
     if (section === "identificacao") setMismatch(null);
   }
@@ -178,6 +187,7 @@ export function FormReview({ t, scan, onSaved, onCancel }: FormReviewProps) {
   const hasKey = cpf !== "" || dateOfBirth !== "";
   const canSave = patientName !== "" && hasKey && !saving;
   const unreadCount = unread.size;
+  const ambiguousCount = ambiguous.size;
   const cpfDoubtful = cpf !== "" && existing?.cpfValid === false;
 
   return (
@@ -191,6 +201,7 @@ export function FormReview({ t, scan, onSaved, onCancel }: FormReviewProps) {
 
       <p className="warning-box">{t.formHandwritingWarning}</p>
       {unreadCount > 0 && <p className="hint">{t.formUnreadCount(unreadCount)}</p>}
+      {ambiguousCount > 0 && <p className="warning-box">{t.formAmbiguousCount(ambiguousCount)}</p>}
 
       {cpfDoubtful && <p className="warning-box">{t.formCpfInvalid}</p>}
 
@@ -228,6 +239,7 @@ export function FormReview({ t, scan, onSaved, onCancel }: FormReviewProps) {
               value={values[section.key]?.[field.key]}
               detail={values[section.key]?.[detailKey(field.key)]}
               notRead={unread.has(`${section.key}.${field.key}`)}
+              twoTicked={ambiguous.has(`${section.key}.${field.key}`)}
               onChange={(value) => setValue(section.key, field.key, value)}
               onDetail={(value) => setValue(section.key, detailKey(field.key), value)}
             />
@@ -311,6 +323,7 @@ function CodedRow({
   value,
   detail,
   notRead,
+  twoTicked,
   onChange,
   onDetail,
 }: {
@@ -319,15 +332,22 @@ function CodedRow({
   value: unknown;
   detail: unknown;
   notRead: boolean;
+  /** The paper has more than one box ticked here; only a person can settle it. */
+  twoTicked?: boolean;
   onChange: (value: string | undefined) => void;
   onDetail: (value: string) => void;
 }) {
   const selected = typeof value === "string" ? value : undefined;
   return (
-    <div className={`form-row${notRead ? " form-row-unread" : ""}`}>
+    <div
+      className={`form-row${notRead ? " form-row-unread" : ""}${
+        twoTicked ? " form-row-ambiguous" : ""
+      }`}
+    >
       <span className="form-label">
         {field.label}
         {notRead && <span className="not-read-tag">{t.formNotRead}</span>}
+        {twoTicked && <span className="two-ticked-tag">{t.formTwoTicked}</span>}
       </span>
       <span className="form-options">
         {(field.options ?? []).map((option) => (

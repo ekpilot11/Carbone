@@ -37,11 +37,24 @@ export interface FormScanResponse {
   /** Section key → field key → value, exactly as the schema below. */
   form: Record<string, unknown>;
   /**
-   * Which fields came back empty, as `section.field` (or `section.eye.field`)
-   * keys — so the review screen can point at the field itself rather than
-   * parse a sentence back into one.
+   * Fields with something written that could not be made out, as
+   * `section.field` (or `section.eye.field`) keys — so the review screen can
+   * point at the field itself rather than parse a sentence back into one.
+   *
+   * A field the paper left *blank* is not in here. That is an answer, not a
+   * gap, and flagging both put a tag on most of a normal form.
    */
   unread: string[];
+  /**
+   * Fields where more than one box is ticked.
+   *
+   * Kept apart from {@link unread} because the remedy is different and the
+   * clinician should be told which one they are facing: an unreadable field
+   * needs the paper looked at again, whereas two ticks is a contradiction on
+   * the form itself that only a person can settle. Both stop the value being
+   * stored; only this one is a question about what the examiner meant.
+   */
+  ambiguous: string[];
 }
 
 const MODEL = process.env.SCAN_MODEL ?? "claude-opus-5";
@@ -91,12 +104,23 @@ const BLANK = "";
  */
 const UNREADABLE = "?";
 
+/**
+ * "More than one box is ticked on this line."
+ *
+ * A contradiction on the paper rather than a failure of reading, and the
+ * clinician is the only one who can settle it — so it is never resolved by
+ * picking the first, the boldest or the most likely. It reaches the review
+ * screen as its own question: *two options are marked here, which is right?*
+ */
+const MULTIPLE = "2+";
+
 function codedField(options: readonly string[], label: string) {
   return {
     type: "string",
-    enum: [...options, BLANK, UNREADABLE],
+    enum: [...options, BLANK, UNREADABLE, MULTIPLE],
     description:
       `${label} — which option is ticked. Empty string if no box is marked. ` +
+      `"${MULTIPLE}" if more than one box is marked. ` +
       `"${UNREADABLE}" if a box is marked but you cannot tell which.`,
   };
 }
@@ -105,10 +129,11 @@ function textField(description: string) {
   return { type: "string", description };
 }
 
-/** How the model answered one field, once the two kinds of nothing are apart. */
+/** How the model answered one field, once the kinds of nothing are apart. */
 type Answer =
   | { kind: "blank" }
   | { kind: "unreadable" }
+  | { kind: "multiple" }
   | { kind: "value"; text: string };
 
 /**
@@ -124,6 +149,7 @@ function readAnswer(source: Record<string, unknown>, key: string, limit = 400): 
   const text = cleanText(source[key], limit);
   if (text === undefined) return { kind: "blank" };
   if (text === UNREADABLE) return { kind: "unreadable" };
+  if (text === MULTIPLE) return { kind: "multiple" };
   return { kind: "value", text };
 }
 
@@ -217,8 +243,9 @@ TICKED OPTIONS
   ticked, crossed, filled, or circled; the written word may be underlined or
   ringed instead of any box being marked. Any of these count as chosen.
 - No box marked on that line: empty string.
-- Two boxes marked, or a mark you cannot attribute to one box: "?". Never
-  pick one of them.
+- More than one box marked on the same line: "2+". This happens on real
+  forms and it is not your job to resolve it — never pick one of them.
+- A single mark you cannot attribute to any one box: "?".
 - Return the option exactly as it appears in the schema's list for that
   field, whatever case it is printed in on the paper.
 
@@ -268,27 +295,31 @@ function cleanText(raw: unknown, limit = 400): string | undefined {
 }
 
 /**
- * Keeps only values the schema allows, and records what could not be read.
+ * Sorts the model's answer into three outcomes: a value, a blank, or a
+ * question for a person.
  *
- * The two kinds of nothing are kept apart here, because they mean opposite
- * things to whoever checks the form: a **blank** field is an answer — the
- * resident left it empty — and is stored as nothing and shown as nothing.
- * An **unreadable** field is a gap in what this app knows, and is the only
- * thing that earns a *not read* tag. Flagging blanks as well would put a
- * tag on most of a normal form and leave the real ones invisible in the
- * crowd.
+ * The kinds of nothing are kept apart here, because they mean different
+ * things to whoever checks the form:
  *
- * A coded answer that isn't one of its own options is dropped and flagged:
- * statistics group by these, and one stray spelling becomes a category of
- * its own that nobody notices.
+ * - **blank** — the resident left it empty. An answer. Stored as nothing,
+ *   shown as nothing, never flagged. Flagging blanks put a tag on most of a
+ *   normal form and left the real ones invisible in the crowd.
+ * - **unreadable** — something is written and this app cannot make it out.
+ *   Go and look at the paper.
+ * - **more than one box ticked** — the paper contradicts itself, and only
+ *   the examiner can say which mark was meant. Never resolved by picking.
  *
- * Exported for the tests: this is where the blank-versus-unread distinction
- * actually lives.
+ * A coded answer that isn't one of its own options is dropped and flagged
+ * too: statistics group by these, and one stray spelling becomes a category
+ * of its own that nobody notices.
+ *
+ * Exported for the tests: this is where those distinctions actually live.
  */
 export function validate(parsed: unknown): FormScanResponse {
   const input = (parsed ?? {}) as Record<string, Record<string, unknown>>;
   const form: Record<string, Record<string, unknown>> = {};
   const unread: string[] = [];
+  const ambiguous: string[] = [];
 
   for (const section of FORM_SECTIONS) {
     const from = input[section.key] ?? {};
@@ -304,6 +335,8 @@ export function validate(parsed: unknown): FormScanResponse {
       const answer = readAnswer(from, field.key, 40);
       if (answer.kind === "blank") {
         // No box marked. That is what the paper says, and it is not a gap.
+      } else if (answer.kind === "multiple") {
+        ambiguous.push(`${section.key}.${field.key}`);
       } else if (answer.kind === "unreadable") {
         unread.push(`${section.key}.${field.key}`);
       } else {
@@ -335,7 +368,7 @@ export function validate(parsed: unknown): FormScanResponse {
     form[section.key] = to;
   }
 
-  return { form, unread };
+  return { form, unread, ambiguous };
 }
 
 /**

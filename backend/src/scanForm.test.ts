@@ -39,12 +39,12 @@ describe("the extraction schema", () => {
    * box marked, and a box marked that can't be attributed. They are not the
    * same fact and the review screen shows them differently.
    */
-  it("offers a coded field the form's options and both kinds of nothing", () => {
+  it("offers a coded field the form's options and every way of not answering", () => {
     const ifis = schema.properties.biomicroscopia.properties.ifis;
-    expect(ifis.enum).toEqual(["Ausente", "Suspeita", "Presente", "", "?"]);
+    expect(ifis.enum).toEqual(["Ausente", "Suspeita", "Presente", "", "?", "2+"]);
 
     const nuclear = schema.properties.catarata.properties.nuclear;
-    expect(nuclear.enum).toEqual(["Grau I", "Grau II", "Grau III", "Grau IV", "", "?"]);
+    expect(nuclear.enum).toEqual(["Grau I", "Grau II", "Grau III", "Grau IV", "", "?", "2+"]);
   });
 
   /**
@@ -295,8 +295,8 @@ describe("reading the model's answer", () => {
 
   /** `form` is section → field → value; the test wants to reach into it. */
   const read = (parsed: unknown) => {
-    const { form, unread } = validate(parsed);
-    return { form: form as Record<string, Record<string, never>>, unread };
+    const { form, unread, ambiguous } = validate(parsed);
+    return { form: form as Record<string, Record<string, never>>, unread, ambiguous };
   };
 
   it("keeps what was answered, in the app's own spelling", () => {
@@ -378,6 +378,35 @@ describe("reading the model's answer", () => {
         else expect(value).toBeUndefined();
       }
     }
+  });
+
+  /**
+   * Two boxes ticked is not a reading failure — it is the paper
+   * contradicting itself, and only the examiner can say which mark was
+   * meant. It is asked as its own question rather than buried among the
+   * fields nobody could read.
+   */
+  it("asks about a line with more than one box ticked", () => {
+    const { form, unread, ambiguous } = read({
+      ...ANSWER,
+      comorbidades: { ...ANSWER.comorbidades, dm2: "2+" },
+    });
+    expect(ambiguous).toEqual(["comorbidades.dm2"]);
+    // Not confused with a field nobody could read: different question,
+    // different remedy.
+    expect(unread).not.toContain("comorbidades.dm2");
+    // And never resolved by picking one of them.
+    expect(form.comorbidades.dm2).toBeUndefined();
+  });
+
+  it("keeps the three outcomes apart on one form", () => {
+    const { unread, ambiguous } = read({
+      ...ANSWER,
+      comorbidades: { ...ANSWER.comorbidades, dm2: "2+", glaucoma: "?", has: "" },
+    });
+    expect(ambiguous).toEqual(["comorbidades.dm2"]);
+    expect(unread).toEqual(["comorbidades.glaucoma"]);
+    // "has" was blank: an answer, and no question at all.
   });
 
   /** One stray spelling would become a statistics category of its own. */

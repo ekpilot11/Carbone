@@ -281,6 +281,8 @@ export interface FormScanResult {
   form: Record<string, Record<string, unknown>>;
   /** `section.field` keys the model couldn't read — shown as "not read". */
   unread: string[];
+  /** Keys where the paper has more than one box ticked — shown as a question. */
+  ambiguous?: string[];
 }
 
 /**

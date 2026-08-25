@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   fetchPatient,
   lookupPatient,
@@ -58,6 +58,23 @@ type Stage =
   | { kind: "chosen"; patient: StoredPatient; consultation: RecordConsultation | null }
   | { kind: "error"; message: string };
 
+/**
+ * How the app satisfied itself that this is the same person, in the words
+ * the confirmation puts on screen.
+ *
+ * The exam side knows only a name — neither the A-scan printout nor the
+ * clinic's spreadsheet carries a CPF or a date of birth. So the name is what
+ * finds the patient, and the CPF (or the date of birth, when there is no
+ * CPF) is the evidence shown back for a person to check against the patient
+ * in front of them. Showing which of the two was used matters: a CPF is a
+ * number nobody shares, a birthday is not.
+ */
+function identityOf(patient: StoredPatient, t: Strings): string {
+  if (patient.cpf) return t.matchIdentityCpf(formatCpf(patient.cpf));
+  if (patient.dateOfBirth) return t.matchIdentityBirth(formatRecordDate(patient.dateOfBirth));
+  return t.matchIdentityNameOnly;
+}
+
 export function ConsultationMatch({
   t,
   lang,
@@ -71,6 +88,51 @@ export function ConsultationMatch({
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [stage, setStage] = useState<Stage>({ kind: "idle" });
   const [examNote, setExamNote] = useState<string | null>(null);
+  const [searchingOther, setSearchingOther] = useState(false);
+  /** The name this component last went looking for, so it asks once per name. */
+  const looked = useRef<string | null>(null);
+
+  /**
+   * Looks the patient up as soon as there is a name to look up.
+   *
+   * Typing a CPF and a date of birth by hand, for a patient the app could
+   * have found from the name already on screen, was work with no judgement
+   * in it. The judgement is the confirmation below — which is kept.
+   */
+  useEffect(() => {
+    if (attached) return;
+    const name = patientName.trim();
+    if (name === "" || name === looked.current) return;
+
+    // The name is an editable field, so it changes on every keystroke.
+    // Waiting for typing to stop keeps this to one lookup per name rather
+    // than one per letter — the same pause the review screen uses.
+    const timer = window.setTimeout(() => {
+      looked.current = name;
+      void searchByName(name);
+    }, 600);
+    return () => window.clearTimeout(timer);
+    // searchByName is stable for the life of the component.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientName, attached]);
+
+  async function searchByName(name: string) {
+    setStage({ kind: "searching" });
+    try {
+      const match = await lookupPatient({ name });
+      // One patient with that name is the ordinary case: go straight to the
+      // confirmation rather than making someone pick from a list of one.
+      if (match.kind === "byNameOnly" && match.candidates.length === 1) {
+        await choose(match.candidates[0]);
+      } else if (match.kind === "match") {
+        await choose(match.patient);
+      } else {
+        setStage({ kind: "result", match });
+      }
+    } catch (err) {
+      setStage({ kind: "error", message: err instanceof Error ? err.message : t.formSaveFailed });
+    }
+  }
 
   async function search() {
     setStage({ kind: "searching" });
@@ -179,28 +241,48 @@ export function ConsultationMatch({
       <p className="hint">{t.matchHint}</p>
       {nameOnly && <p className="hint">{t.matchNoCpfInList}</p>}
 
-      <div className="match-fields">
-        {!nameOnly && (
-          <label className="field">
-            <span>{t.matchCpfLabel}</span>
-            <input
-              type="text"
-              value={cpf}
-              onChange={(e) => setCpf(e.target.value)}
-              autoComplete="off"
-              inputMode="numeric"
-            />
-          </label>
-        )}
-        <label className="field">
-          <span>{t.matchDobLabel}</span>
-          <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} />
-        </label>
-        <button type="button" onClick={() => void search()} disabled={!canSearch}>
-          {stage.kind === "searching" ? t.matchSearching : t.matchSearch}
-        </button>
-      </div>
-      {!canSearch && stage.kind === "idle" && <p className="hint">{t.matchNoKey}</p>}
+      {stage.kind === "searching" && <p className="hint">{t.matchSearching}</p>}
+      {patientName.trim() === "" && stage.kind === "idle" && (
+        <p className="hint">{t.matchNeedsName}</p>
+      )}
+
+      {/* The name is what finds the patient, so typing an identifier by hand
+          is only needed when the name was misread or is stored differently.
+          Folded away rather than removed. */}
+      {patientName.trim() !== "" && (
+        <details
+          className="match-other"
+          open={searchingOther}
+          onToggle={(e) => setSearchingOther((e.target as HTMLDetailsElement).open)}
+        >
+          <summary>{t.matchOtherWays}</summary>
+          <div className="match-fields">
+            {!nameOnly && (
+              <label className="field">
+                <span>{t.matchCpfLabel}</span>
+                <input
+                  type="text"
+                  value={cpf}
+                  onChange={(e) => setCpf(e.target.value)}
+                  autoComplete="off"
+                  inputMode="numeric"
+                />
+              </label>
+            )}
+            <label className="field">
+              <span>{t.matchDobLabel}</span>
+              <input
+                type="date"
+                value={dateOfBirth}
+                onChange={(e) => setDateOfBirth(e.target.value)}
+              />
+            </label>
+            <button type="button" onClick={() => void search()} disabled={!canSearch}>
+              {stage.kind === "searching" ? t.matchSearching : t.matchSearch}
+            </button>
+          </div>
+        </details>
+      )}
 
       {stage.kind === "error" && <p className="scan-message">{stage.message}</p>}
       {examNote && <p className="hint">{examNote}</p>}
@@ -232,9 +314,7 @@ export function ConsultationMatch({
             {stage.match.candidates.map((candidate) => (
               <li key={candidate.id}>
                 <button type="button" className="secondary" onClick={() => void choose(candidate)}>
-                  {candidate.name}
-                  {candidate.dateOfBirth ? ` · ${formatRecordDate(candidate.dateOfBirth)}` : ""}
-                  {candidate.cpf ? ` · ${formatCpf(candidate.cpf)}` : ""}
+                  {candidate.name} · {identityOf(candidate, t)}
                 </button>
               </li>
             ))}
@@ -243,28 +323,46 @@ export function ConsultationMatch({
       )}
 
       {stage.kind === "chosen" && (
-        <div>
+        <div className="match-found">
+          {/* Who was found, and on what evidence — the question a person is
+              actually being asked. It leads, above the detail. */}
+          <p className="match-found-name">
+            <strong>{stage.patient.name}</strong>
+            <span className="match-found-id"> · {identityOf(stage.patient, t)}</span>
+          </p>
+          <p className="hint">{t.matchConfirmQuestion}</p>
+
           {stage.consultation === null ? (
             <p className="hint">{t.matchNoConsultation}</p>
           ) : (
-            <>
-              <div className="match-columns">
-                <div>
-                  <h5>{t.matchStoredSide}</h5>
-                  <p className="hint">{stage.patient.name}</p>
-                  <ConsultationSummary t={t} consultation={stage.consultation} />
-                </div>
-                <div>
-                  <h5>{t.matchMeasuredSide}</h5>
-                  <p className="hint">{patientName || "—"}</p>
-                  <MeasurementSummary record={record} />
-                </div>
+            <div className="match-columns">
+              <div>
+                <h5>{t.matchStoredSide}</h5>
+                <ConsultationSummary t={t} consultation={stage.consultation} />
               </div>
-              <button type="button" onClick={() => void confirm(stage.patient, stage.consultation)}>
-                {t.matchConfirm}
-              </button>
-            </>
+              <div>
+                <h5>{t.matchMeasuredSide}</h5>
+                <p className="hint">{patientName || "—"}</p>
+                <MeasurementSummary record={record} />
+              </div>
+            </div>
           )}
+
+          <div className="match-decide">
+            <button type="button" onClick={() => void confirm(stage.patient, stage.consultation)}>
+              {t.matchConfirm}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                setStage({ kind: "idle" });
+                setSearchingOther(true);
+              }}
+            >
+              {t.matchReject}
+            </button>
+          </div>
         </div>
       )}
     </div>
