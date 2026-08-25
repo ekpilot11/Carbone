@@ -12,11 +12,13 @@ import { readableErrors } from "./modelErrors.js";
  * came to hand, is a different problem. Two consequences run through this
  * file:
  *
- * - **Absent beats guessed.** Every field is optional. A blank on the paper
- *   and a word nobody can read come back the same way — missing — and the
- *   review screen turns that into a decision a person makes. A confidently
- *   wrong "SIM" against a comorbidity is worse than a gap, because a gap is
- *   visible.
+ * - **Absent beats guessed.** Every field is optional, and the model can
+ *   decline any of them. A confidently wrong "SIM" against a comorbidity is
+ *   worse than a gap, because a gap is visible.
+ * - **A blank is not a gap.** The paper being empty here and this app being
+ *   unable to read here are different facts, and only the second is worth
+ *   flagging. Conflating them put a *not read* tag on most of a normal
+ *   form, which is the same as tagging none of it.
  * - **The prompt is a first guess.** No filled-in form existed when this was
  *   written, so how residents actually tick a box, and whether they write
  *   "20/40" or "0,5" for acuity, is unknown. Expect to correct the notes
@@ -63,29 +65,66 @@ const MAX_TOKENS = 4096;
  * 31 is every optional field on the paper, counted exactly — nested per-eye
  * fields included. No arrangement of unions fits under 16 while the form
  * has 31 optional fields, so the unions have to go entirely: every field is
- * a plain string, and an **empty string** is how the model says a box was
- * not marked or a line was left blank.
+ * a plain string, and "nothing here" is a **value**.
  *
- * That is not a workaround dressed up as a design. `cleanText()` below
- * already treats an empty string as nothing read, so a blank lands in
- * `unread` exactly as `null` did, and the distinction the review screen is
- * built on — blank on the paper versus couldn't read it — is untouched. The
- * model keeps a way to decline every single field, which is the point: this
- * reads handwriting, and a schema that forced a choice would make it invent
- * one.
+ * Two values, in fact, and keeping them apart is the whole point. A single
+ * `null` conflated *the paper is blank here* with *I cannot read this*, and
+ * the first real form made the cost obvious: most fields on a normal form
+ * are blank, so every one of them arrived flagged and the flag stopped
+ * meaning anything. {@link BLANK} and {@link UNREADABLE} are those two
+ * facts, and only the second is a gap worth a clinician's attention.
  */
 const BLANK = "";
+
+/**
+ * "There is something here and I cannot make it out" — which is a different
+ * fact from "there is nothing here", and the one worth interrupting a
+ * clinician for.
+ *
+ * The review screen has always drawn that distinction: a blank box renders
+ * as an empty field, an unreadable one carries a *not read* tag. It could
+ * not honour it while the model had only one way to say nothing, so every
+ * blank on the paper arrived tagged — and on a real form most fields are
+ * blank, which turned the tag into wallpaper and destroyed its meaning.
+ *
+ * A single question mark, because no answer on this form is ever "?".
+ */
+const UNREADABLE = "?";
 
 function codedField(options: readonly string[], label: string) {
   return {
     type: "string",
-    enum: [...options, BLANK],
-    description: `${label} — which option is ticked. Empty string if none is, or if it can't be told.`,
+    enum: [...options, BLANK, UNREADABLE],
+    description:
+      `${label} — which option is ticked. Empty string if no box is marked. ` +
+      `"${UNREADABLE}" if a box is marked but you cannot tell which.`,
   };
 }
 
 function textField(description: string) {
   return { type: "string", description };
+}
+
+/** How the model answered one field, once the two kinds of nothing are apart. */
+type Answer =
+  | { kind: "blank" }
+  | { kind: "unreadable" }
+  | { kind: "value"; text: string };
+
+/**
+ * Reads one field out of the model's answer.
+ *
+ * A field the model *left out altogether* counts as unreadable, not blank.
+ * The schema requires every one of them, so an absent key means a malformed
+ * answer — and the safe reading of "we never heard about this field" is
+ * that nobody knows what the paper says there, not that the paper is empty.
+ */
+function readAnswer(source: Record<string, unknown>, key: string, limit = 400): Answer {
+  if (!(key in source)) return { kind: "unreadable" };
+  const text = cleanText(source[key], limit);
+  if (text === undefined) return { kind: "blank" };
+  if (text === UNREADABLE) return { kind: "unreadable" };
+  return { kind: "value", text };
 }
 
 function buildSchema() {
@@ -95,14 +134,16 @@ function buildSchema() {
     const fields: Record<string, unknown> = {};
 
     for (const field of section.text) {
-      fields[field.key] = textField(`${field.label}. Empty string if blank or illegible.`);
+      fields[field.key] = textField(
+        `${field.label}. Empty string if the line is blank; "${UNREADABLE}" if something is written there that you cannot read.`,
+      );
     }
 
     for (const field of section.coded) {
       fields[field.key] = codedField(field.options, field.label);
       if (field.detailFor) {
         fields[detailKey(field.key)] = textField(
-          `What is written beside "${field.detailFor}" for ${field.label}. Empty string if blank.`,
+          `What is written beside "${field.detailFor}" for ${field.label}. Empty string if blank; "${UNREADABLE}" if unreadable.`,
         );
       }
     }
@@ -112,7 +153,7 @@ function buildSchema() {
         const perEye: Record<string, unknown> = {};
         for (const field of section.perEye) {
           perEye[field.key] = textField(
-            `${field.label} for ${eye.toUpperCase()}, as written. Empty string if blank.`,
+            `${field.label} for ${eye.toUpperCase()}, as written. Empty string if blank; "${UNREADABLE}" if unreadable.`,
           );
         }
         fields[eye] = {
@@ -153,21 +194,31 @@ const PROMPT = `This photograph shows a filled-in Brazilian ophthalmology form,
 
 Read what is actually written on the paper. Follow these rules exactly:
 
+TWO KINDS OF NOTHING — KEEP THEM APART
+- Return an empty string ("") when the field is genuinely blank: nothing
+  written on the line, no box marked. Most fields on a normal form are
+  blank, and an empty string is the ordinary, expected answer.
+- Return "?" only when there IS something there and you cannot make it out:
+  handwriting you cannot decipher, a mark you cannot attribute to one box,
+  a number smudged or cut off by the edge of the photo.
+- The difference matters. An empty string says "the resident left this
+  blank"; "?" says "this app does not know what the paper says here", and a
+  person is asked to go and look. Marking a blank field "?" buries the
+  fields that genuinely need checking.
+
 MISSING BEATS GUESSED
-- Return an empty string ("") for anything blank, crossed out, or that you
-  cannot read with confidence. Never infer a value from context, from what
-  is typical, or from other fields.
-- A field being clinically likely is not evidence that it was written.
-- Every field on this form is optional. An empty string is always an
-  acceptable answer, and it is the right one whenever the paper does not
-  clearly say otherwise.
+- Never infer a value from context, from what is typical, or from other
+  fields. A field being clinically likely is not evidence that it was
+  written.
+- Every field on this form is optional. Never invent an answer to fill one.
 
 TICKED OPTIONS
 - Options appear as empty checkboxes: "☐ OD   ☐ OE   ☐ AO". A box may be
   ticked, crossed, filled, or circled; the written word may be underlined or
   ringed instead of any box being marked. Any of these count as chosen.
-- If two options are marked, or a mark is ambiguous between them, return an
-  empty string rather than picking one.
+- No box marked on that line: empty string.
+- Two boxes marked, or a mark you cannot attribute to one box: "?". Never
+  pick one of them.
 - Return the option exactly as it appears in the schema's list for that
   field, whatever case it is printed in on the paper.
 
@@ -181,8 +232,10 @@ IDENTIFICATION
 - NOME COMPLETO is the patient's full name.
 - CPF is the Brazilian tax identity number, eleven digits, often written
   "123.456.789-09". Return every digit you can see, as written; do not
-  correct, complete or invent digits, and return an empty string rather than
-  guessing one that is unclear.
+  correct, complete or invent digits. If a CPF is written but any digit of
+  it is unclear, return "?" — never a partial or guessed number. This is
+  what a patient is found by later, and a wrong digit attaches their exam
+  to somebody else.
 - DATA DE NASCIMENTO is printed as ____/____/________; return it as written.
 - IDADE is a number of years.
 - PRONTUÁRIO is the hospital record number. It may contain dots or dashes;
@@ -215,15 +268,21 @@ function cleanText(raw: unknown, limit = 400): string | undefined {
 }
 
 /**
- * Keeps only values the schema allows, and records what came back empty.
+ * Keeps only values the schema allows, and records what could not be read.
  *
- * A coded field that isn't one of its own options is dropped rather than
- * stored: statistics group by these, and one stray spelling becomes a
- * category of its own that nobody notices. An empty string is one such
- * value, which is what lets "not marked" travel as a plain string and still
- * arrive at the review screen as *not read* rather than as an answer.
+ * The two kinds of nothing are kept apart here, because they mean opposite
+ * things to whoever checks the form: a **blank** field is an answer — the
+ * resident left it empty — and is stored as nothing and shown as nothing.
+ * An **unreadable** field is a gap in what this app knows, and is the only
+ * thing that earns a *not read* tag. Flagging blanks as well would put a
+ * tag on most of a normal form and leave the real ones invisible in the
+ * crowd.
  *
- * Exported for the tests: this is where the blank-versus-unread guarantee
+ * A coded answer that isn't one of its own options is dropped and flagged:
+ * statistics group by these, and one stray spelling becomes a category of
+ * its own that nobody notices.
+ *
+ * Exported for the tests: this is where the blank-versus-unread distinction
  * actually lives.
  */
 export function validate(parsed: unknown): FormScanResponse {
@@ -236,19 +295,25 @@ export function validate(parsed: unknown): FormScanResponse {
     const to: Record<string, unknown> = {};
 
     for (const field of section.text) {
-      const value = cleanText(from[field.key]);
-      if (value === undefined) unread.push(`${section.key}.${field.key}`);
-      else to[field.key] = value;
+      const answer = readAnswer(from, field.key);
+      if (answer.kind === "value") to[field.key] = answer.text;
+      else if (answer.kind === "unreadable") unread.push(`${section.key}.${field.key}`);
     }
 
     for (const field of section.coded) {
-      const raw = cleanText(from[field.key], 40);
-      const option = raw === undefined ? undefined : canonicalOption(field, raw);
-      if (option !== undefined) to[field.key] = option;
-      else unread.push(`${section.key}.${field.key}`);
+      const answer = readAnswer(from, field.key, 40);
+      if (answer.kind === "blank") {
+        // No box marked. That is what the paper says, and it is not a gap.
+      } else if (answer.kind === "unreadable") {
+        unread.push(`${section.key}.${field.key}`);
+      } else {
+        const option = canonicalOption(field, answer.text);
+        if (option !== undefined) to[field.key] = option;
+        else unread.push(`${section.key}.${field.key}`);
+      }
       if (field.detailFor) {
-        const detail = cleanText(from[detailKey(field.key)]);
-        if (detail !== undefined) to[detailKey(field.key)] = detail;
+        const detail = readAnswer(from, detailKey(field.key));
+        if (detail.kind === "value") to[detailKey(field.key)] = detail.text;
       }
     }
 
@@ -257,9 +322,11 @@ export function validate(parsed: unknown): FormScanResponse {
         const eyeIn = (from[eye] ?? {}) as Record<string, unknown>;
         const eyeOut: Record<string, unknown> = {};
         for (const field of section.perEye) {
-          const value = cleanText(eyeIn[field.key], 40);
-          if (value === undefined) unread.push(`${section.key}.${eye}.${field.key}`);
-          else eyeOut[field.key] = value;
+          const answer = readAnswer(eyeIn, field.key, 40);
+          if (answer.kind === "value") eyeOut[field.key] = answer.text;
+          else if (answer.kind === "unreadable") {
+            unread.push(`${section.key}.${eye}.${field.key}`);
+          }
         }
         to[eye] = eyeOut;
       }

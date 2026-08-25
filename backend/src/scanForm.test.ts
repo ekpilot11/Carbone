@@ -34,12 +34,17 @@ describe("the extraction schema", () => {
     expect(schema.required.sort()).toEqual(FORM_SECTIONS.map((s) => s.key).sort());
   });
 
-  it("offers a coded field exactly the options the form prints, or nothing", () => {
+  /**
+   * The options the paper prints, plus the two ways of saying nothing: no
+   * box marked, and a box marked that can't be attributed. They are not the
+   * same fact and the review screen shows them differently.
+   */
+  it("offers a coded field the form's options and both kinds of nothing", () => {
     const ifis = schema.properties.biomicroscopia.properties.ifis;
-    expect(ifis.enum).toEqual(["Ausente", "Suspeita", "Presente", ""]);
+    expect(ifis.enum).toEqual(["Ausente", "Suspeita", "Presente", "", "?"]);
 
     const nuclear = schema.properties.catarata.properties.nuclear;
-    expect(nuclear.enum).toEqual(["Grau I", "Grau II", "Grau III", "Grau IV", ""]);
+    expect(nuclear.enum).toEqual(["Grau I", "Grau II", "Grau III", "Grau IV", "", "?"]);
   });
 
   /**
@@ -306,7 +311,13 @@ describe("reading the model's answer", () => {
     expect(form.avPio.od).toEqual({ sc: "20/80", pio: "14" });
   });
 
-  it("turns every empty string into a gap, not an answer", () => {
+  /**
+   * The bug the clinic hit: a real form is mostly blank, and every blank
+   * arrived carrying a *not read* tag. A tag on almost every field is the
+   * same as no tag at all — the ones that genuinely need checking vanish
+   * into the crowd.
+   */
+  it("treats a blank field as blank, not as something it failed to read", () => {
     const { form, unread } = read(ANSWER);
     for (const path of [
       "identificacao.idade",
@@ -318,15 +329,46 @@ describe("reading the model's answer", () => {
       "avPio.od.cc",
       "avPio.oe.cc",
     ]) {
-      expect(unread, path).toContain(path);
+      expect(unread, path).not.toContain(path);
     }
-    // ...and nothing empty was stored as if it had been read.
+    // Blank all the same: nothing was stored as if it had been read.
     expect(form.comorbidades.tansulosina).toBeUndefined();
     expect(form.catarata.cortical).toBeUndefined();
     expect(form.avPio.od).not.toHaveProperty("cc");
   });
 
-  it("reports a blank form entirely as unread rather than as answers", () => {
+  /** The one thing that still earns the tag. */
+  it("flags a field the model marked unreadable", () => {
+    const { form, unread } = read({
+      ...ANSWER,
+      identificacao: { ...ANSWER.identificacao, cpf: "?" },
+      biomicroscopia: { ...ANSWER.biomicroscopia, ifis: "?" },
+      avPio: { ...ANSWER.avPio, od: { ...ANSWER.avPio.od, pio: "?" } },
+    });
+    expect(unread).toContain("identificacao.cpf");
+    expect(unread).toContain("biomicroscopia.ifis");
+    expect(unread).toContain("avPio.od.pio");
+    // Never stored as the literal "?" — that would be a value, not a gap.
+    expect(form.identificacao.cpf).toBeUndefined();
+    expect(form.biomicroscopia.ifis).toBeUndefined();
+  });
+
+  /** A tag has to be rare to mean anything; this form earns exactly one. */
+  it("keeps the tag rare on an ordinary form", () => {
+    const { unread } = read({
+      ...ANSWER,
+      identificacao: { ...ANSWER.identificacao, cpf: "?" },
+    });
+    expect(unread).toEqual(["identificacao.cpf"]);
+  });
+
+  /**
+   * Not the same as a form full of empty strings: the model said nothing at
+   * all. The schema requires every field, so an answer missing all of them
+   * is malformed, and "we never heard about this" is not evidence that the
+   * paper is empty.
+   */
+  it("reports an answer that omits every field as unread, not as blank", () => {
     const { form, unread } = read({});
     expect(unread.length).toBeGreaterThan(25);
     for (const section of Object.values(form)) {
