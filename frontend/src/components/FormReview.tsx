@@ -44,6 +44,18 @@ interface FormReviewProps {
   scan: { form: FormValues; unread: string[]; ambiguous?: string[] };
   onSaved: (patient: StoredPatient, how: string) => void;
   onCancel: () => void;
+  /**
+   * Correcting a consultation already stored, rather than filing a new one.
+   *
+   * The screen is the same — it is already a complete editor of every field
+   * — but the destination is not: a correction edits the visit in place,
+   * where saving again would add a visit that never happened and leave the
+   * wrong values behind for the statistics to count. With this set, the
+   * identity fields are read-only (the patient is not in question here) and
+   * the form goes to `onSaveForm`.
+   */
+  editing?: boolean;
+  onSaveForm?: (form: FormValues) => Promise<void>;
 }
 
 function detailKey(key: string): string {
@@ -55,7 +67,14 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function FormReview({ t, scan, onSaved, onCancel }: FormReviewProps) {
+export function FormReview({
+  t,
+  scan,
+  onSaved,
+  onCancel,
+  editing,
+  onSaveForm,
+}: FormReviewProps) {
   const [sections, setSections] = useState<FormSectionSpec[]>([]);
   const [values, setValues] = useState<FormValues>(scan.form);
   const [unread, setUnread] = useState<Set<string>>(new Set(scan.unread));
@@ -104,6 +123,8 @@ export function FormReview({ t, scan, onSaved, onCancel }: FormReviewProps) {
    */
   useEffect(() => {
     window.clearTimeout(lookupTimer.current);
+    // Correcting a stored visit: whose it is was settled when it was filed.
+    if (editing) return;
     if (cpf === "" && patientName === "") {
       setExisting(null);
       return;
@@ -118,7 +139,7 @@ export function FormReview({ t, scan, onSaved, onCancel }: FormReviewProps) {
         .catch(() => setExisting(null));
     }, 500);
     return () => window.clearTimeout(lookupTimer.current);
-  }, [cpf, patientName, dateOfBirth]);
+  }, [cpf, patientName, dateOfBirth, editing]);
 
   function setValue(section: string, key: string, value: unknown) {
     setValues((current) => ({
@@ -161,6 +182,10 @@ export function FormReview({ t, scan, onSaved, onCancel }: FormReviewProps) {
     setSaving(true);
     setError(null);
     try {
+      if (editing && onSaveForm) {
+        await onSaveForm(values);
+        return;
+      }
       const ageRaw = identity.idade;
       const age = Number(ageRaw);
       const { patient } = await savePatient({
@@ -185,7 +210,7 @@ export function FormReview({ t, scan, onSaved, onCancel }: FormReviewProps) {
   }
 
   const hasKey = cpf !== "" || dateOfBirth !== "";
-  const canSave = patientName !== "" && hasKey && !saving;
+  const canSave = editing ? !saving : patientName !== "" && hasKey && !saving;
   const unreadCount = unread.size;
   const ambiguousCount = ambiguous.size;
   const cpfDoubtful = cpf !== "" && existing?.cpfValid === false;
@@ -193,13 +218,13 @@ export function FormReview({ t, scan, onSaved, onCancel }: FormReviewProps) {
   return (
     <section className="form-review">
       <div className="batch-header">
-        <h2>{t.formReviewTitle}</h2>
+        <h2>{editing ? t.formCorrectTitle : t.formReviewTitle}</h2>
         <button type="button" className="secondary" onClick={onCancel}>
           {t.formCancel}
         </button>
       </div>
 
-      <p className="warning-box">{t.formHandwritingWarning}</p>
+      {!editing && <p className="warning-box">{t.formHandwritingWarning}</p>}
       {unreadCount > 0 && <p className="hint">{t.formUnreadCount(unreadCount)}</p>}
       {ambiguousCount > 0 && <p className="warning-box">{t.formAmbiguousCount(ambiguousCount)}</p>}
 
@@ -217,6 +242,7 @@ export function FormReview({ t, scan, onSaved, onCancel }: FormReviewProps) {
         <p className="hint">{t.formBirthKnown(existing.patient.name)}</p>
       )}
 
+      {!editing && (
       <div className="form-row">
         <span className="form-label">{t.formSeenOn}</span>
         <input
@@ -226,6 +252,7 @@ export function FormReview({ t, scan, onSaved, onCancel }: FormReviewProps) {
           onChange={(e) => setSeenOn(e.target.value)}
         />
       </div>
+      )}
 
       {sections.map((section) => (
         <fieldset className="form-section" key={section.key}>
@@ -306,11 +333,11 @@ export function FormReview({ t, scan, onSaved, onCancel }: FormReviewProps) {
           </button>
         </div>
       )}
-      {!canSave && !saving && <p className="hint">{t.formNeedsIdentity}</p>}
+      {!canSave && !saving && !editing && <p className="hint">{t.formNeedsIdentity}</p>}
 
       <div className="batch-actions">
         <button type="button" onClick={() => void save()} disabled={!canSave}>
-          {saving ? t.formSaving : t.formSave}
+          {saving ? t.formSaving : editing ? t.formSaveCorrection : t.formSave}
         </button>
       </div>
     </section>

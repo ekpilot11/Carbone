@@ -28,6 +28,7 @@ import {
   findPatient,
   listPatients,
   saveExam,
+  updateConsultation,
   matchPatient,
   NameMismatchError,
   openDatabase,
@@ -427,6 +428,40 @@ app.get("/api/patients", (req, res) => {
 
 app.get("/api/patients/:id/consultations", (req, res) => {
   res.json({ consultations: consultationsFor(Number(req.params.id)) });
+});
+
+/**
+ * Corrects a consultation already stored.
+ *
+ * A field misread on the day and noticed later has to be fixable in place.
+ * Photographing the form again would add a visit that never happened and
+ * leave the wrong values behind to be counted by the statistics.
+ */
+app.put("/api/patients/:id/consultations/:cid", (req, res) => {
+  const patientId = Number(req.params.id);
+  const consultationId = Number(req.params.cid);
+  const { seenOn, prontuario, form } = req.body ?? {};
+  if (form === undefined || form === null || typeof form !== "object") {
+    res.status(400).json({ error: "A form object is required." });
+    return;
+  }
+  const text = (value: unknown) =>
+    typeof value === "string" && value.trim() !== "" ? value : undefined;
+
+  const changed = updateConsultation({
+    patientId,
+    consultationId,
+    seenOn: text(seenOn),
+    prontuario: text(prontuario),
+    form,
+  });
+  if (!changed) {
+    // Either id may be wrong, and saying which would confirm the existence
+    // of a record the caller may have guessed at.
+    res.status(404).json({ error: "No such consultation for that patient." });
+    return;
+  }
+  res.json({ consultations: consultationsFor(patientId) });
 });
 
 /**

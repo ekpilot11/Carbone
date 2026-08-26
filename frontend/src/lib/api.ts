@@ -461,11 +461,73 @@ export interface StoredConsultation {
   createdAt: string;
 }
 
+/**
+ * A stored exam, as `examPayload` on the biometry page writes it — the
+ * measurements and the decision, never the photograph.
+ */
+export interface StoredExamValues {
+  lens?: { name: string; lensFactor?: string; aConstant?: string };
+  kIndex?: string;
+  eyes?: {
+    side: "OD" | "OS";
+    measurements: Record<string, string>;
+    recommended?: string;
+    rows?: IolTableRow[];
+  }[];
+}
+
 export interface StoredExam {
   id: number;
   measuredOn?: string;
-  exam: unknown;
+  exam: StoredExamValues;
   createdAt: string;
+}
+
+/** Every stored patient, newest first — what the patients list shows. */
+export async function fetchPatients(): Promise<StoredPatient[]> {
+  const res = await fetch(`${API_BASE}/api/patients`);
+  if (!res.ok) throw new Error(`Couldn't load the patient list (${res.status}).`);
+  const body = (await res.json()) as { patients?: StoredPatient[] };
+  return body.patients ?? [];
+}
+
+/**
+ * Corrects a consultation already stored.
+ *
+ * Not the same as saving a new one: photographing the form again would add
+ * a visit that never happened and leave the wrong values behind for the
+ * statistics to count.
+ */
+export async function updateConsultation(
+  patientId: number,
+  consultationId: number,
+  input: { seenOn?: string; prontuario?: string; form: unknown },
+): Promise<StoredConsultation[]> {
+  const res = await fetch(`${API_BASE}/api/patients/${patientId}/consultations/${consultationId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? `Couldn't save that correction (${res.status}).`);
+  }
+  const body = (await res.json()) as { consultations?: StoredConsultation[] };
+  return body.consultations ?? [];
+}
+
+/**
+ * Removes a patient and everything held about them.
+ *
+ * Irreversible, and there is no login in front of it — the screen asks for
+ * the name to be typed before this is called.
+ */
+export async function deletePatient(patientId: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/patients/${patientId}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? `Couldn't delete that patient (${res.status}).`);
+  }
 }
 
 /** One patient with both halves of their record. */

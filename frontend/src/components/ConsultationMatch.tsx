@@ -414,7 +414,14 @@ function MeasurementSummary({ record }: { record: MedicalRecordInput }) {
   );
 }
 
-/** What gets stored: the measurements and the decision, never the photograph. */
+/**
+ * What gets stored: the measurements and the decision, never the photograph.
+ *
+ * The calculator's own table goes in too, so a record rebuilt later on the
+ * patients page is the same document as the one produced on the day —
+ * without it the predicted-refraction line is missing, because there is
+ * nothing left to work it out from.
+ */
 function examPayload(record: MedicalRecordInput) {
   return {
     lens: record.lens,
@@ -423,6 +430,7 @@ function examPayload(record: MedicalRecordInput) {
       side: eye.side,
       measurements: eye.measurements,
       recommended: eye.recommended,
+      rows: eye.rows,
     })),
   };
 }

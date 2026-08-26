@@ -554,6 +554,43 @@ export function consultationsFor(patientId: number): StoredConsultation[] {
   }));
 }
 
+/**
+ * Corrects a consultation already stored.
+ *
+ * A misread that reached the database is not fixed by photographing the
+ * form again — that would add a second visit that never happened, and leave
+ * the wrong one in place to be counted by the statistics. This edits the
+ * one row.
+ *
+ * The patient id is part of the lookup rather than trusted from the URL: a
+ * consultation belongs to exactly one patient, and editing another's record
+ * through a guessed id is the kind of mistake that should be impossible
+ * rather than merely unlikely. Returns false when the two don't belong
+ * together, so the caller can answer 404 instead of silently doing nothing.
+ */
+export function updateConsultation(input: {
+  patientId: number;
+  consultationId: number;
+  seenOn?: string;
+  prontuario?: string;
+  form: unknown;
+}): boolean {
+  const result = connection()
+    .prepare(
+      `UPDATE consultations
+          SET seen_on = ?, prontuario = ?, data = ?
+        WHERE id = ? AND patient_id = ?`,
+    )
+    .run(
+      input.seenOn ?? null,
+      input.prontuario ? prontuarioKey(input.prontuario) : null,
+      JSON.stringify(input.form),
+      input.consultationId,
+      input.patientId,
+    );
+  return Number(result.changes) > 0;
+}
+
 export function listPatients(): PatientRecord[] {
   const rows = connection()
     .prepare("SELECT * FROM patients ORDER BY updated_at DESC")

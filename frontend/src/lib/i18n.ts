@@ -193,6 +193,59 @@ const en = {
     "The consultation was attached to the record, but this exam could not be stored on the server.",
   matchNoCpfInList:
     "A spreadsheet carries no CPF, so a patient can only be looked up here by name — and a name is shared. Check the date of birth before attaching.",
+  navLabel: "Sections",
+  navForm: "Consultation form",
+  navBiometry: "Biometry",
+  navStatistics: "Statistics",
+  navPatients: "Patients",
+
+  formPageTitle: "Photograph a consultation form",
+  formPageHint:
+    "The Ficha de Diagnóstico filled in at the patient's first visit. Send a photo of the paper, a PDF, or the Word file — you check everything read from it before it is stored.",
+
+  formCorrectTitle: "Correct this consultation",
+  formSaveCorrection: "Save the correction",
+
+  statsTitle: "Statistics",
+  statsComingSoon:
+    "Not built yet — this is the next piece of work. It will count across every consultation stored, with filters on the fields the form already records:",
+  statsPlanned: [
+    "Pupil dilation — the list of patients who are hard to dilate",
+    "IFIS suspected or present, and tamsulosin use",
+    "DM2, hypertension and glaucoma",
+    "Cataract grade and type",
+    "Cross-tabs worth having, such as tamsulosin against IFIS",
+  ] as readonly string[],
+
+  patientsTitle: "Patients",
+  patientsHint:
+    "Everyone on file on this computer. Open one to read everything stored about them.",
+  patientsFilter: "Find a patient",
+  patientsFilterPlaceholder: "name or CPF",
+  patientsLoading: "Loading…",
+  patientsLoadFailed: "Couldn't load the patient list.",
+  patientsEmpty: "No patients stored yet. They appear here once a consultation form is saved.",
+  patientsNoneMatch: "No patient matches that.",
+  patientsCount: (count: number) => `${count} patient${count === 1 ? "" : "s"}.`,
+  patientsBack: "← All patients",
+  patientsAge: (years: number) => `${years} years old`,
+  patientsProntuario: (value: string) => `prontuário ${value}`,
+  patientsConsultations: (count: number) =>
+    count === 1 ? "1 consultation" : `${count} consultations`,
+  patientsNoConsultations: "No consultation form stored for this patient yet.",
+  patientsExams: (count: number) => (count === 1 ? "1 exam" : `${count} exams`),
+  patientsNoExams: "No biometry stored for this patient yet.",
+  patientsCorrect: "Correct this consultation",
+  patientsNoPhotos:
+    "The photographs themselves were never stored — only the values read from them, which are everything above. That is deliberate: a filled form is the most identifying thing this app handles.",
+  patientsDeleteTitle: "Remove this patient",
+  patientsDeleteWarning: (name: string) =>
+    `⚠ This deletes ${name} and every consultation and exam stored for them. It cannot be undone, and there is no login in front of it — take a backup from the form page first if you are unsure.`,
+  patientsDeleteConfirmLabel: "Type the patient's name to confirm",
+  patientsDelete: "Delete permanently",
+  patientsDeleting: "Deleting…",
+  patientsDeleteFailed: "Couldn't delete that patient.",
+
   databaseExport: "Download a backup of the database",
   listImportLabel: "Or import a patient list (.xlsx or .csv)",
   listImporting: "Reading the list…",
@@ -530,6 +583,59 @@ const pt: Strings = {
     "A consulta foi anexada ao prontuário, mas não foi possível guardar este exame no servidor.",
   matchNoCpfInList:
     "Uma planilha não traz CPF, então aqui o paciente só pode ser procurado pelo nome — e nome se repete. Confira a data de nascimento antes de anexar.",
+  navLabel: "Seções",
+  navForm: "Ficha de consulta",
+  navBiometry: "Biometria",
+  navStatistics: "Estatísticas",
+  navPatients: "Pacientes",
+
+  formPageTitle: "Fotografe uma ficha de consulta",
+  formPageHint:
+    "A Ficha de Diagnóstico preenchida na primeira consulta do paciente. Envie uma foto do papel, um PDF ou o arquivo do Word — você confere tudo o que for lido antes de ser guardado.",
+
+  formCorrectTitle: "Corrigir esta consulta",
+  formSaveCorrection: "Salvar a correção",
+
+  statsTitle: "Estatísticas",
+  statsComingSoon:
+    "Ainda não construído — é o próximo passo. Vai contar sobre todas as consultas guardadas, com filtros nos campos que a ficha já registra:",
+  statsPlanned: [
+    "Dilatação pupilar — a lista de pacientes difíceis de dilatar",
+    "IFIS suspeita ou presente, e uso de tansulosina",
+    "DM2, HAS e glaucoma",
+    "Grau e tipo da catarata",
+    "Cruzamentos que valem a pena, como tansulosina × IFIS",
+  ] as readonly string[],
+
+  patientsTitle: "Pacientes",
+  patientsHint:
+    "Todos os cadastrados neste computador. Abra um para ver tudo o que está guardado sobre ele.",
+  patientsFilter: "Procurar paciente",
+  patientsFilterPlaceholder: "nome ou CPF",
+  patientsLoading: "Carregando…",
+  patientsLoadFailed: "Não foi possível carregar a lista de pacientes.",
+  patientsEmpty:
+    "Nenhum paciente guardado ainda. Eles aparecem aqui assim que uma ficha for salva.",
+  patientsNoneMatch: "Nenhum paciente corresponde a isso.",
+  patientsCount: (count: number) => `${count} paciente${count === 1 ? "" : "s"}.`,
+  patientsBack: "← Todos os pacientes",
+  patientsAge: (years: number) => `${years} anos`,
+  patientsProntuario: (value: string) => `prontuário ${value}`,
+  patientsConsultations: (count: number) => (count === 1 ? "1 consulta" : `${count} consultas`),
+  patientsNoConsultations: "Nenhuma ficha guardada para este paciente ainda.",
+  patientsExams: (count: number) => (count === 1 ? "1 exame" : `${count} exames`),
+  patientsNoExams: "Nenhuma biometria guardada para este paciente ainda.",
+  patientsCorrect: "Corrigir esta consulta",
+  patientsNoPhotos:
+    "As fotos em si nunca foram guardadas — apenas os valores lidos delas, que são tudo o que está acima. Isso é proposital: uma ficha preenchida é a coisa mais identificável que este aplicativo manipula.",
+  patientsDeleteTitle: "Remover este paciente",
+  patientsDeleteWarning: (name: string) =>
+    `⚠ Isto apaga ${name} e todas as consultas e exames guardados dele. Não há como desfazer, e não existe login na frente disso — faça um backup na página da ficha antes, se estiver em dúvida.`,
+  patientsDeleteConfirmLabel: "Digite o nome do paciente para confirmar",
+  patientsDelete: "Apagar definitivamente",
+  patientsDeleting: "Apagando…",
+  patientsDeleteFailed: "Não foi possível apagar esse paciente.",
+
   databaseExport: "Baixar um backup do banco de dados",
   listImportLabel: "Ou importe uma lista de pacientes (.xlsx ou .csv)",
   listImporting: "Lendo a lista…",

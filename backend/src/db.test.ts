@@ -22,6 +22,7 @@ import {
   prontuarioKey,
   saveConsultation,
   saveExam,
+  updateConsultation,
 } from "./db.js";
 
 /** A real file per test, not :memory: — WAL and migrations only matter on disk. */
@@ -419,6 +420,63 @@ describe("the exam, joined to the patient it belongs to", () => {
     const same = saveConsultation({ cpf: ANA, name: "Ana Souza", form: FORM });
     expect(same.id).toBe(patient.id);
     expect(consultationsFor(patient.id)).toHaveLength(1);
+  });
+
+  /**
+   * A misread that reached the database is not fixed by photographing the
+   * form again — that adds a visit that never happened and leaves the wrong
+   * values behind for the statistics to count.
+   */
+  it("corrects a consultation in place rather than adding another", () => {
+    const patient = saveConsultation({
+      cpf: ANA,
+      name: "Ana Souza",
+      seenOn: "2026-07-04",
+      prontuario: "1234567",
+      form: { catarata: { nuclear: "Grau I" } },
+    });
+    const [stored] = consultationsFor(patient.id);
+
+    const changed = updateConsultation({
+      patientId: patient.id,
+      consultationId: stored.id,
+      seenOn: "2026-07-04",
+      prontuario: "1234567",
+      form: { catarata: { nuclear: "Grau III" } },
+    });
+
+    expect(changed).toBe(true);
+    const visits = consultationsFor(patient.id);
+    expect(visits).toHaveLength(1);
+    expect(visits[0].id).toBe(stored.id);
+    expect(visits[0].form).toEqual({ catarata: { nuclear: "Grau III" } });
+  });
+
+  /**
+   * The patient id is part of the lookup, not decoration. Editing one
+   * patient's record through another's id should be impossible rather than
+   * merely unlikely.
+   */
+  it("refuses a consultation that belongs to a different patient", () => {
+    const ana = saveConsultation({ cpf: ANA, name: "Ana Souza", form: FORM });
+    const jose = saveConsultation({ cpf: JOSE, name: "Jose Pereira", form: FORM });
+    const [anaVisit] = consultationsFor(ana.id);
+
+    const changed = updateConsultation({
+      patientId: jose.id,
+      consultationId: anaVisit.id,
+      form: { tampered: true },
+    });
+
+    expect(changed).toBe(false);
+    expect(consultationsFor(ana.id)[0].form).toEqual(FORM);
+  });
+
+  it("says so when the consultation does not exist at all", () => {
+    const patient = saveConsultation({ cpf: ANA, name: "Ana Souza", form: FORM });
+    expect(
+      updateConsultation({ patientId: patient.id, consultationId: 9999, form: {} }),
+    ).toBe(false);
   });
 
   it("finds a patient by id, and says so when there is none", () => {
