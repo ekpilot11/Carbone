@@ -8,6 +8,7 @@ import {
   birthKey,
   closeDatabase,
   consultationsFor,
+  deleteConsultation,
   deletePatient,
   examsFor,
   exportAll,
@@ -470,6 +471,60 @@ describe("the exam, joined to the patient it belongs to", () => {
 
     expect(changed).toBe(false);
     expect(consultationsFor(ana.id)[0].form).toEqual(FORM);
+  });
+
+  /**
+   * The same form photographed twice: an easy mistake, and one that used to
+   * have no remedy short of deleting the patient. A duplicate left in place
+   * would also have the statistics count that patient's findings twice.
+   */
+  it("removes one visit and leaves the rest of the patient alone", () => {
+    const patient = saveConsultation({
+      cpf: ANA,
+      name: "Ana Souza",
+      seenOn: "2026-07-04",
+      form: { catarata: { nuclear: "Grau III" } },
+    });
+    // The same form, sent twice by mistake.
+    saveConsultation({
+      cpf: ANA,
+      name: "Ana Souza",
+      seenOn: "2026-07-04",
+      form: { catarata: { nuclear: "Grau III" } },
+    });
+    saveExam({ patientId: patient.id, exam: { od: { k1: 43.23 } } });
+    expect(consultationsFor(patient.id)).toHaveLength(2);
+
+    const [duplicate] = consultationsFor(patient.id);
+    expect(deleteConsultation(patient.id, duplicate.id)).toBe(true);
+
+    const left = consultationsFor(patient.id);
+    expect(left).toHaveLength(1);
+    expect(left[0].id).not.toBe(duplicate.id);
+    // The patient stays, and so does everything else about them.
+    expect(findPatient(patient.id)?.name).toBe("Ana Souza");
+    expect(examsFor(patient.id)).toHaveLength(1);
+  });
+
+  /**
+   * Someone whose biometry is on file is still a patient. Removing their
+   * last consultation must not quietly take them with it.
+   */
+  it("keeps the patient when their last consultation goes", () => {
+    const patient = saveConsultation({ cpf: ANA, name: "Ana Souza", form: FORM });
+    const [only] = consultationsFor(patient.id);
+    expect(deleteConsultation(patient.id, only.id)).toBe(true);
+    expect(consultationsFor(patient.id)).toHaveLength(0);
+    expect(findPatient(patient.id)?.name).toBe("Ana Souza");
+  });
+
+  it("refuses to remove a consultation through another patient's id", () => {
+    const ana = saveConsultation({ cpf: ANA, name: "Ana Souza", form: FORM });
+    const jose = saveConsultation({ cpf: JOSE, name: "Jose Pereira", form: FORM });
+    const [anaVisit] = consultationsFor(ana.id);
+
+    expect(deleteConsultation(jose.id, anaVisit.id)).toBe(false);
+    expect(consultationsFor(ana.id)).toHaveLength(1);
   });
 
   it("says so when the consultation does not exist at all", () => {

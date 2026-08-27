@@ -22,6 +22,7 @@ import {
 import {
   closeDatabase,
   consultationsFor,
+  deleteConsultation,
   deletePatient,
   examsFor,
   exportAll,
@@ -458,6 +459,23 @@ app.put("/api/patients/:id/consultations/:cid", (req, res) => {
   if (!changed) {
     // Either id may be wrong, and saying which would confirm the existence
     // of a record the caller may have guessed at.
+    res.status(404).json({ error: "No such consultation for that patient." });
+    return;
+  }
+  res.json({ consultations: consultationsFor(patientId) });
+});
+
+/**
+ * Removes one visit from a patient's history.
+ *
+ * The same form photographed twice is the ordinary reason, and a duplicate
+ * left in place is not harmless: the statistics would count that patient's
+ * findings twice. The patient and their exams stay — only the visit goes.
+ */
+app.delete("/api/patients/:id/consultations/:cid", (req, res) => {
+  const patientId = Number(req.params.id);
+  const removed = deleteConsultation(patientId, Number(req.params.cid));
+  if (!removed) {
     res.status(404).json({ error: "No such consultation for that patient." });
     return;
   }

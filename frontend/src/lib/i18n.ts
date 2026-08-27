@@ -236,6 +236,11 @@ const en = {
   patientsExams: (count: number) => (count === 1 ? "1 exam" : `${count} exams`),
   patientsNoExams: "No biometry stored for this patient yet.",
   patientsCorrect: "Correct this consultation",
+  patientsRemoveVisit: "Remove this consultation",
+  patientsRemoveVisitConfirm: "Yes, remove it",
+  patientsRemoveVisitWarning:
+    "⚠ This removes only this consultation. The patient and their exams stay. It cannot be undone.",
+  patientsRemoveVisitFailed: "Couldn't remove that consultation.",
   patientsNoPhotos:
     "The photographs themselves were never stored — only the values read from them, which are everything above. That is deliberate: a filled form is the most identifying thing this app handles.",
   patientsDeleteTitle: "Remove this patient",
@@ -626,6 +631,11 @@ const pt: Strings = {
   patientsExams: (count: number) => (count === 1 ? "1 exame" : `${count} exames`),
   patientsNoExams: "Nenhuma biometria guardada para este paciente ainda.",
   patientsCorrect: "Corrigir esta consulta",
+  patientsRemoveVisit: "Remover esta consulta",
+  patientsRemoveVisitConfirm: "Sim, remover",
+  patientsRemoveVisitWarning:
+    "⚠ Isto remove apenas esta consulta. O paciente e os exames dele permanecem. Não há como desfazer.",
+  patientsRemoveVisitFailed: "Não foi possível remover essa consulta.",
   patientsNoPhotos:
     "As fotos em si nunca foram guardadas — apenas os valores lidos delas, que são tudo o que está acima. Isso é proposital: uma ficha preenchida é a coisa mais identificável que este aplicativo manipula.",
   patientsDeleteTitle: "Remover este paciente",

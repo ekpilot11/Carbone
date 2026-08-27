@@ -591,6 +591,30 @@ export function updateConsultation(input: {
   return Number(result.changes) > 0;
 }
 
+/**
+ * Removes one visit from a patient's history.
+ *
+ * The same form photographed twice is the ordinary reason — an easy mistake
+ * to make and, until now, one with no remedy short of deleting the patient
+ * and starting again. A duplicate left in place is not harmless either: the
+ * statistics would count that patient's findings twice.
+ *
+ * The patient keeps everything else, including their exams. Deleting a
+ * patient's last consultation does not delete the patient — someone whose
+ * biometry is on file is still a patient, and guessing otherwise would
+ * throw away data nobody asked to lose.
+ *
+ * The patient id is part of the lookup for the same reason it is in
+ * {@link updateConsultation}: removing one patient's visit through
+ * another's id should be impossible rather than merely unlikely.
+ */
+export function deleteConsultation(patientId: number, consultationId: number): boolean {
+  const result = connection()
+    .prepare("DELETE FROM consultations WHERE id = ? AND patient_id = ?")
+    .run(consultationId, patientId);
+  return Number(result.changes) > 0;
+}
+
 export function listPatients(): PatientRecord[] {
   const rows = connection()
     .prepare("SELECT * FROM patients ORDER BY updated_at DESC")

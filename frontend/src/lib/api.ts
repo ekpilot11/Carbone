@@ -517,6 +517,27 @@ export async function updateConsultation(
 }
 
 /**
+ * Removes one visit from a patient's history.
+ *
+ * The same form sent twice is the ordinary reason. The patient and their
+ * exams stay — only that consultation goes.
+ */
+export async function deleteConsultation(
+  patientId: number,
+  consultationId: number,
+): Promise<StoredConsultation[]> {
+  const res = await fetch(`${API_BASE}/api/patients/${patientId}/consultations/${consultationId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? `Couldn't remove that consultation (${res.status}).`);
+  }
+  const body = (await res.json()) as { consultations?: StoredConsultation[] };
+  return body.consultations ?? [];
+}
+
+/**
  * Removes a patient and everything held about them.
  *
  * Irreversible, and there is no login in front of it — the screen asks for

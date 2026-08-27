@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { FormReview } from "../components/FormReview";
 import {
+  deleteConsultation,
   deletePatient,
   fetchPatient,
   fetchPatients,
@@ -183,6 +184,9 @@ function PatientDetailView({
 }) {
   const { patient, consultations, exams } = detail;
   const [editing, setEditing] = useState<StoredConsultation | null>(null);
+  // Which visit is one click away from being removed. Two steps rather than
+  // one, because there is no undo and the button sits beside "correct".
+  const [removingId, setRemovingId] = useState<number | null>(null);
   const [confirmName, setConfirmName] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -232,6 +236,17 @@ function PatientDetailView({
     });
     onChanged({ ...detail, consultations: updated });
     setEditing(null);
+  }
+
+  async function removeConsultation(consultationId: number) {
+    setError(null);
+    try {
+      const left = await deleteConsultation(patient.id, consultationId);
+      onChanged({ ...detail, consultations: left });
+      setRemovingId(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.patientsRemoveVisitFailed);
+    }
   }
 
   async function remove() {
@@ -301,9 +316,36 @@ function PatientDetailView({
                 <li className="hint">{t.matchNothingRecorded}</li>
               )}
             </ul>
-            <button type="button" className="secondary" onClick={() => setEditing(consultation)}>
-              {t.patientsCorrect}
-            </button>
+            <div className="record-buttons">
+              <button type="button" className="secondary" onClick={() => setEditing(consultation)}>
+                {t.patientsCorrect}
+              </button>
+              {removingId === consultation.id ? (
+                <>
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => void removeConsultation(consultation.id)}
+                  >
+                    {t.patientsRemoveVisitConfirm}
+                  </button>
+                  <button type="button" className="secondary" onClick={() => setRemovingId(null)}>
+                    {t.formCancel}
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setRemovingId(consultation.id)}
+                >
+                  {t.patientsRemoveVisit}
+                </button>
+              )}
+            </div>
+            {removingId === consultation.id && (
+              <p className="warning-box">{t.patientsRemoveVisitWarning}</p>
+            )}
           </div>
         );
       })}
