@@ -21,6 +21,8 @@ import {
 import { downloadPdf } from "../lib/pdf";
 import { copyRecords, copyRecordSource } from "../lib/recordText";
 import { emptyRow } from "../lib/eyeRow";
+import { surgicalList, type SurgicalListEntry } from "../lib/surgicalList";
+import { buildPdf } from "../lib/pdf";
 import type { EyeSide } from "../lib/types";
 
 /**
@@ -68,10 +70,47 @@ export function PatientsPage({ t, lang }: PatientsPageProps) {
   const [detail, setDetail] = useState<PatientDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The patients picked for a theatre day. Insertion order is kept: whoever
+  // builds the list is deciding the running order as they tick.
+  const [picked, setPicked] = useState<number[]>([]);
+  const [day, setDay] = useState(() => new Date().toISOString().slice(0, 10));
+  const [listText, setListText] = useState<string | null>(null);
+  const [listBusy, setListBusy] = useState(false);
 
   useEffect(() => {
     void refreshList();
   }, []);
+
+  function togglePicked(id: number) {
+    setPicked((current) =>
+      current.includes(id) ? current.filter((each) => each !== id) : [...current, id],
+    );
+    setListText(null);
+  }
+
+  /**
+   * Builds the day's list from what is stored for each patient picked.
+   *
+   * Each one is fetched rather than assembled from the list rows: the list
+   * carries only who they are, and the block needs their consultation and
+   * their exam.
+   */
+  async function buildList() {
+    setListBusy(true);
+    setError(null);
+    try {
+      const entries: SurgicalListEntry[] = [];
+      for (const id of picked) {
+        const { patient, consultations, exams } = await fetchPatient(id);
+        entries.push({ patient, consultation: consultations[0], exam: exams[0] });
+      }
+      setListText(surgicalList(day, entries));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.patientsLoadFailed);
+    } finally {
+      setListBusy(false);
+    }
+  }
 
   async function refreshList() {
     setBusy(true);
@@ -151,7 +190,15 @@ export function PatientsPage({ t, lang }: PatientsPageProps) {
 
       <ul className="patient-list">
         {shown.map((patient) => (
-          <li key={patient.id}>
+          <li key={patient.id} className="patient-row">
+            <label className="patient-pick">
+              <input
+                type="checkbox"
+                checked={picked.includes(patient.id)}
+                onChange={() => togglePicked(patient.id)}
+                aria-label={t.patientsPickAria(patient.name)}
+              />
+            </label>
             <button type="button" onClick={() => void open(patient.id)}>
               <span className="patient-name">{patient.name}</span>
               <span className="patient-id">{identityOf(patient, t)}</span>
@@ -161,8 +208,71 @@ export function PatientsPage({ t, lang }: PatientsPageProps) {
       </ul>
 
       {shown.length > 0 && <p className="hint">{t.patientsCount(shown.length)}</p>}
+
+      {/* The theatre list: tick the patients being operated together, and
+          print the short block-per-patient report the clinic writes by hand. */}
+      {picked.length > 0 && (
+        <div className="surgical-box">
+          <h3>{t.listTitle}</h3>
+          <p className="hint">{t.listPicked(picked.length)}</p>
+          <div className="match-fields">
+            <label className="field">
+              <span>{t.listDay}</span>
+              <input
+                type="date"
+                value={day}
+                onChange={(e) => {
+                  setDay(e.target.value);
+                  setListText(null);
+                }}
+              />
+            </label>
+            <button type="button" onClick={() => void buildList()} disabled={listBusy}>
+              {listBusy ? t.listBuilding : t.listBuild}
+            </button>
+            <button type="button" className="secondary" onClick={() => { setPicked([]); setListText(null); }}>
+              {t.listClear}
+            </button>
+          </div>
+
+          {listText !== null && (
+            <>
+              <pre className="surgical-list">{listText}</pre>
+              <div className="record-buttons">
+                <button type="button" onClick={() => void navigator.clipboard.writeText(listText)}>
+                  {t.listCopy}
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => downloadPdf(listPdf(listText, day, t), `lista-cirurgica-${day}.pdf`)}
+                >
+                  {t.listDownload}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </section>
   );
+}
+
+/**
+ * The list as a printable page.
+ *
+ * Deliberately plain — this is read on a theatre wall or a clipboard, not
+ * filed. The existing PDF writer lays out lines; nothing here needs more.
+ */
+function listPdf(text: string, day: string, t: Strings) {
+  const lines = text.split("\n");
+  let y = 64;
+  const texts = lines.map((line) => {
+    const item = { text: line, x: 56, y, size: line === lines[0] ? 14 : 11, bold: line === lines[0] };
+    y += line === "" ? 8 : 16;
+    return item;
+  });
+  return buildPdf({ title: `${t.listTitle} - ${day}`, texts, rules: [] });
 }
 
 /**

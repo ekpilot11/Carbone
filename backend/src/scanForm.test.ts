@@ -87,13 +87,28 @@ describe("the extraction schema", () => {
     expect(identity).toContain("prontuario");
   });
 
-  /** The new form is checkboxes only; nothing opens a "qual?" line any more. */
-  it("asks for no detail lines, because the paper no longer has any", () => {
-    for (const section of FORM_SECTIONS) {
-      for (const field of section.coded) {
-        expect(field.detailFor, `${section.key}.${field.key}`).toBeUndefined();
-      }
-    }
+  /**
+   * One line on the paper opens a "qual?" box: OUTRAS. It is where the
+   * clinic writes the comorbidities the coded fields have no box for, and
+   * the surgical list prints it on the APP line.
+   */
+  it("asks what is written beside Outras, and nowhere else", () => {
+    const withDetail = FORM_SECTIONS.flatMap((section) =>
+      section.coded.filter((f) => f.detailFor).map((f) => `${section.key}.${f.key}`),
+    );
+    expect(withDetail).toEqual(["comorbidades.outrasComorbidades"]);
+    expect(schema.properties.comorbidades.required).toContain("outrasComorbidadesDetalhe");
+  });
+
+  /**
+   * Free text is printed, never counted. "IAM PRÉVIO" written by hand is a
+   * sentence, not a category, and grouping the statistics by it would
+   * produce a chart of typos.
+   */
+  it("keeps the free-text line out of what the statistics count", () => {
+    const counted = codedFields().map(({ section, field }) => `${section}.${field.key}`);
+    expect(counted).not.toContain("comorbidades.outrasComorbidadesDetalhe");
+    expect(counted).not.toContain("fundoscopia.outroAchado");
   });
 });
 

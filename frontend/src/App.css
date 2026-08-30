@@ -1157,3 +1157,48 @@ button.danger {
 button.danger:disabled {
   background: #d8b6b5;
 }
+
+/* Picking patients for a theatre day. The tick sits outside the button so
+   choosing a patient for the list and opening their record stay separate. */
+.patient-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.patient-row > button {
+  flex: 1;
+}
+
+.patient-pick input {
+  width: 1.1rem;
+  height: 1.1rem;
+  cursor: pointer;
+}
+
+.surgical-box {
+  margin-top: 1.4rem;
+  padding: 0.9rem;
+  border: 1px solid #ccd3db;
+  border-radius: 8px;
+  background: #f7f9fb;
+}
+
+.surgical-box h3 {
+  margin: 0 0 0.3rem;
+  font-size: 1rem;
+}
+
+/* The list itself, in the shape it is read: fixed width, lines as written. */
+.surgical-list {
+  margin: 0.8rem 0;
+  padding: 0.8rem;
+  background: #fff;
+  border: 1px solid #ccd3db;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}

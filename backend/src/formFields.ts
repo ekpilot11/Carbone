@@ -89,7 +89,12 @@ export const FORM_SECTIONS: FormSection[] = [
       { key: "glaucoma", label: "Glaucoma", options: YES_NO },
       // The IFIS risk factor, and the reason it is on the form at all.
       { key: "tansulosina", label: "Tansulosina / alfabloqueador", options: YES_NO },
-      { key: "outrasComorbidades", label: "Outras", options: YES_NO },
+      // The only free-text line in this section, and the one that carries
+      // everything the coded fields have no box for — IAM prévio,
+      // hipotireoidismo, tabagismo. The clinic writes it beside the tick,
+      // so it is read and printed verbatim, and never counted: a sentence
+      // written by hand is not a category.
+      { key: "outrasComorbidades", label: "Outras", options: YES_NO, detailFor: "Sim" },
     ],
     text: [],
   },

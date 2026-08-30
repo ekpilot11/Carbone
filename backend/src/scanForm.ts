@@ -268,6 +268,17 @@ IDENTIFICATION
 - PRONTUÁRIO is the hospital record number. It may contain dots or dashes;
   return it as written.
 
+CLINIC SHORTHAND — COPY IT, DO NOT TRANSLATE IT
+- Two lines carry free text in the clinic's own abbreviations: what is
+  written beside OUTRAS when it is ticked SIM, and the OUTRO ACHADO line at
+  the bottom of the form.
+- Return them exactly as written, character for character. Do not expand an
+  abbreviation, correct a spelling, translate a word, or reorder anything.
+  "IAM PRÉVIO", "N1/2+", "SCP3+", "HIALOSE ASTEROIDE OD" and "TABAGISTA" are
+  the intended output, not a description of them.
+- These are read by a surgeon planning an operation. A helpful expansion is
+  a change to the record.
+
 CATARACT CLASSIFICATION
 - The four lines (nuclear, cortical, subcapsular posterior, outras formas)
   are independent. Only one may be marked, or several, or none. Return an
